@@ -3,7 +3,7 @@ import {
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle, 
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity, 
   HelpCircle, Loader2, Send, BarChart3, Globe, Sun, Moon,
-  Menu, X, CheckCircle, Zap, Calendar, CalendarDays
+  Menu, X, CheckCircle, Zap, Calendar, CalendarDays, Key
 } from 'lucide-react';
 
 // --- 사내 지식 베이스 (Troubleshooting Data) ---
@@ -666,6 +666,40 @@ export default function App() {
   const [theme, setTheme] = useState('dark');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
+  // 💡 API Key 상태 및 저장 확인 상태
+  const [geminiKey, setGeminiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('gemini_api_key') || '';
+    }
+    return '';
+  });
+  const [isKeySaved, setIsKeySaved] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !!localStorage.getItem('gemini_api_key');
+    }
+    return false;
+  });
+
+  const handleKeyChange = (e) => {
+    setGeminiKey(e.target.value);
+  };
+
+  const handleSaveKey = () => {
+    if (!geminiKey.trim()) return;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('gemini_api_key', geminiKey.trim());
+    }
+    setIsKeySaved(true);
+  };
+
+  const handleResetKey = () => {
+    setIsKeySaved(false);
+    setGeminiKey('');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('gemini_api_key');
+    }
+  };
+  
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -750,16 +784,20 @@ export default function App() {
   const maxCategoryCount = Math.max(...Object.values(categoryCounts));
 
   const fetchGemini = async (payload) => {
-    let apiKey = "";
+    // 💡 수정: UI 입력 키를 최우선으로 사용, 없을 시 환경 변수 참조
+    let apiKey = geminiKey.trim();
     try {
-      if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+      if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       }
     } catch (e) {
       // ignore
     }
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    if (!apiKey) throw new Error("좌측 사이드바에 Gemini API Key를 입력해주세요.");
+
+    // 💡 수정: 외부 Vercel에서 404 에러가 나지 않도록 범용 퍼블릭 모델인 gemini-2.0-flash 로 변경
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -824,6 +862,14 @@ export default function App() {
 
   const handleSendMessage = async (userText) => {
     if (!userText.trim() || isLoading) return;
+
+    // 💡 추가: 메시지 전송 전 API Key 누락 방지 로직
+    let hasKey = geminiKey.trim() !== "";
+    try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
+    if (!hasKey) {
+      alert("⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력해주세요! (입력하신 키는 본인 브라우저에만 안전하게 자동 저장됩니다)");
+      return;
+    }
 
     setInput('');
     const userMsgId = Date.now().toString() + "-u";
@@ -1032,6 +1078,42 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
           
+          {/* API Key Input Section */}
+          <div className="mb-6 bg-indigo-950/30 border border-indigo-500/20 p-4 rounded-xl">
+             <h2 className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Key className="w-3.5 h-3.5" /> Gemini API 설정
+             </h2>
+             {!isKeySaved ? (
+               <div className="flex gap-2">
+                 <input
+                    type="password"
+                    value={geminiKey}
+                    onChange={handleKeyChange}
+                    placeholder="API Key 입력..."
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 shadow-sm transition-all"
+                 />
+                 <button
+                    onClick={handleSaveKey}
+                    className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500"
+                 >
+                   저장
+                 </button>
+               </div>
+             ) : (
+               <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 px-3 py-2.5 rounded-lg">
+                 <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                   <CheckCircle className="w-4 h-4" /> API Key 연동 완료
+                 </span>
+                 <button
+                   onClick={handleResetKey}
+                   className="text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white underline underline-offset-2 transition-colors"
+                 >
+                   키 재설정
+                 </button>
+               </div>
+             )}
+          </div>
+
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
             <h3 className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5 font-bold">
               <BarChart3 className="w-3.5 h-3.5" /> {t.statsTitle}
