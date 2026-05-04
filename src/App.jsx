@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle, 
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity, 
@@ -174,7 +174,6 @@ const kbData = {
   ]
 };
 
-// --- 다국어 (i18n) 딕셔너리 세팅 ---
 const dict = {
   ko: {
     title: "Infra Troubleshooting",
@@ -182,9 +181,10 @@ const dict = {
     initMsg: "안녕하세요. 인프라 트러블슈팅 AI 에이전트입니다. 궁금한 점은 자유롭게 채팅에 남겨주세요.",
     urgencyBtn: "🚨 긴급 장애",
     statsTitle: "KB 장애 통계",
-    totalUsage: "Total Usage",
-    inputLabel: "Input",
-    outputLabel: "Output",
+    finopsTitle: "FinOps 토큰 모니터링",
+    totalUsage: "총 사용량",
+    inputLabel: "입력",
+    outputLabel: "출력",
     lastLabel: "Last:",
     actionReq: "Action Required",
     cliRun: "CLI 트러블슈팅 실행",
@@ -199,8 +199,8 @@ const dict = {
     simRcaMsg: "🚨 **[긴급 장애 감지 및 분석 완료]**\n장애 내역: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nCLI 트러블슈팅 실행 버튼을 클릭하여 복구를 진행하세요.",
     cachedReply: "**[{title}]** 장애 내용에 대한 분석 및 조치 가이드입니다.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\n상세 터미널 로그 및 자동화 스크립트는 좌측의 **[CLI 트러블슈팅 실행]** 버튼을 클릭하여 확인하세요.",
     cliContent: "복구 파이프라인 및 터미널 엑세스를 통해 조치를 시작합니다.\n\n\u0060\u0060\u0060bash\n{cliMock}\n\u0060\u0060\u0060\n\n{insight}",
-    cacheHit: "0 토큰 (Cache Hit - 비용 0원)",
-    apiHit: "{tokens} 토큰 (API 호출)",
+    cacheHit: "Last: 0 토큰 (Cache Hit - 비용 0원)",
+    apiHit: "Last: {tokens} 토큰 (API 호출)",
     categories: {
       "OS / GUI": "OS 장애",
       "Cloud / Network": "네트워크 장애",
@@ -219,6 +219,7 @@ const dict = {
     initMsg: "Hello. I am the Infra Troubleshooting AI Agent. Feel free to leave any questions in the chat.",
     urgencyBtn: "🚨 Critical Alert",
     statsTitle: "KB Incident Stats",
+    finopsTitle: "FinOps Token Monitor",
     totalUsage: "Total Usage",
     inputLabel: "Input",
     outputLabel: "Output",
@@ -236,8 +237,8 @@ const dict = {
     simRcaMsg: "🚨 **[Critical Incident Detected & RCA Complete]**\nIncident: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nPlease click the Run CLI Troubleshooting button to proceed with recovery.",
     cachedReply: "Here is the analysis and resolution guide for **[{title}]**.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\nPlease check the detailed terminal logs and automation scripts by clicking the **[Run CLI Troubleshooting]** button on the left.",
     cliContent: "Initiating recovery through the pipeline and terminal access.\n\n\u0060\u0060\u0060bash\n{cliMock}\n\u0060\u0060\u0060\n\n{insight}",
-    cacheHit: "0 Tokens (Cache Hit - $0)",
-    apiHit: "{tokens} Tokens (API Call)",
+    cacheHit: "Last: 0 Tokens (Cache Hit - $0)",
+    apiHit: "Last: {tokens} Tokens (API Call)",
     categories: {
       "OS / GUI": "OS Issue",
       "Cloud / Network": "Network Issue",
@@ -252,12 +253,11 @@ const dict = {
   }
 };
 
-// --- 구조화된 파싱 (RCA, RES, 일반 텍스트, 코드블록 분리) ---
 const parseMessageBlocks = (text) => {
   if (!text) return [];
   const blocks = [];
-  // <RCA>, <RES>, ```bash 를 동시에 잡는 정규식
-  const regex = /(<RCA>([\s\S]*?)<\/RCA>|<RES>([\s\S]*?)<\/RES>|\`\`\`(bash|sh|shell|yaml|yml|hcl)?\n([\s\S]*?)\`\`\`)/g;
+  const bt3 = String.fromCharCode(96, 96, 96);
+  const regex = new RegExp(`(<RCA>([\\s\\S]*?)<\\/RCA>|<RES>([\\s\\S]*?)<\\/RES>|${bt3}(bash|sh|shell|yaml|yml|hcl|json)?\\n([\\s\\S]*?)${bt3})`, "g");
   
   let lastIdx = 0;
   let match;
@@ -266,15 +266,18 @@ const parseMessageBlocks = (text) => {
     if (match.index > lastIdx) {
       blocks.push({ type: 'text', content: text.substring(lastIdx, match.index) });
     }
-
     if (match[1].startsWith('<RCA>')) {
       blocks.push({ type: 'rca', content: match[2].trim() });
     } else if (match[1].startsWith('<RES>')) {
       blocks.push({ type: 'res', content: match[3].trim() });
-    } else if (match[1].startsWith('\`\`\`')) {
-      blocks.push({ type: 'cli', content: match[5].trim() });
+    } else if (match[1].startsWith(bt3)) {
+      const langMatch = (match[4] || '').toLowerCase();
+      if (['yaml', 'yml', 'hcl', 'json'].includes(langMatch)) {
+        blocks.push({ type: 'script', lang: langMatch, content: match[5].trim() });
+      } else {
+        blocks.push({ type: 'cli', content: match[5].trim() });
+      }
     }
-
     lastIdx = match.index + match[0].length;
   }
 
@@ -285,25 +288,30 @@ const parseMessageBlocks = (text) => {
   return blocks;
 };
 
-// --- 컴포넌트: 일반 텍스트 (스트리밍 및 자동 스크롤) ---
 const TextStream = ({ text, animate, onDone, scrollRef }) => {
   const [displayed, setDisplayed] = useState(animate ? '' : text);
+  const finishedRef = useRef(!animate);
   
   useEffect(() => {
-    if (!animate) return;
+    if (finishedRef.current || !animate) {
+      setDisplayed(text);
+      if (onDone && animate) onDone();
+      return;
+    }
     let i = 0;
     const timer = setInterval(() => {
       setDisplayed(text.slice(0, i));
-      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' }); // 스트리밍 중 즉각적인 자동 스크롤
+      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' }); 
       i += 3;
-      if (i > text.length + 3) {
+      if (i >= text.length) {
         setDisplayed(text);
+        finishedRef.current = true;
         clearInterval(timer);
         if (onDone) onDone();
       }
     }, 10);
     return () => clearInterval(timer);
-  }, [animate, text, scrollRef]);
+  }, [animate, text, onDone, scrollRef]);
 
   const formattedText = displayed
     .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-600 dark:text-indigo-400">$1</strong>')
@@ -317,24 +325,30 @@ const TextStream = ({ text, animate, onDone, scrollRef }) => {
   );
 };
 
-// --- 컴포넌트: RCA 전용 카드 UI ---
 const RcaCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
   const [displayed, setDisplayed] = useState(animate ? '' : text);
+  const finishedRef = useRef(!animate);
+
   useEffect(() => {
-    if (!animate) return;
+    if (finishedRef.current || !animate) {
+      setDisplayed(text);
+      if (onDone && animate) onDone();
+      return;
+    }
     let i = 0;
     const timer = setInterval(() => {
       setDisplayed(text.slice(0, i));
       scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
       i += 3;
-      if (i > text.length + 3) {
+      if (i >= text.length) {
         setDisplayed(text);
+        finishedRef.current = true;
         clearInterval(timer);
         if (onDone) onDone();
       }
     }, 10);
     return () => clearInterval(timer);
-  }, [animate, text, scrollRef]);
+  }, [animate, text, onDone, scrollRef]);
 
   return (
     <div className="bg-red-50 dark:bg-red-950/30 border-l-4 border-red-500 rounded-r-xl p-4 my-4 shadow-sm">
@@ -349,24 +363,30 @@ const RcaCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
   );
 };
 
-// --- 컴포넌트: Resolution 전용 카드 UI ---
 const ResCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
   const [displayed, setDisplayed] = useState(animate ? '' : text);
+  const finishedRef = useRef(!animate);
+
   useEffect(() => {
-    if (!animate) return;
+    if (finishedRef.current || !animate) {
+      setDisplayed(text);
+      if (onDone && animate) onDone();
+      return;
+    }
     let i = 0;
     const timer = setInterval(() => {
       setDisplayed(text.slice(0, i));
       scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
       i += 3;
-      if (i > text.length + 3) {
+      if (i >= text.length) {
         setDisplayed(text);
+        finishedRef.current = true;
         clearInterval(timer);
         if (onDone) onDone();
       }
     }, 10);
     return () => clearInterval(timer);
-  }, [animate, text, scrollRef]);
+  }, [animate, text, onDone, scrollRef]);
 
   return (
     <div className="bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-emerald-500 rounded-r-xl p-4 my-4 shadow-sm">
@@ -381,25 +401,31 @@ const ResCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
   );
 };
 
-// --- 컴포넌트: CLI 터미널 스트리밍 ---
 const CLIStream = ({ code, animate, onDone, scrollRef }) => {
-  const lines = code.trim().split('\n');
-  const [visibleLines, setVisibleLines] = useState(animate ? [] : lines);
+  const [visibleLines, setVisibleLines] = useState(animate ? [] : code.trim().split('\n'));
+  const finishedRef = useRef(!animate);
   
   useEffect(() => {
-    if (!animate) return;
+    const currentLines = code.trim().split('\n');
+    if (finishedRef.current || !animate) {
+      setVisibleLines(currentLines);
+      if (onDone && animate) onDone();
+      return;
+    }
+    
     let i = 0;
     const timer = setInterval(() => {
-      setVisibleLines(lines.slice(0, i + 1));
+      setVisibleLines(currentLines.slice(0, i + 1));
       scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
       i++;
-      if (i >= lines.length) {
+      if (i >= currentLines.length) {
+        finishedRef.current = true;
         clearInterval(timer);
-        setTimeout(() => { if (onDone) onDone() }, 500); 
+        if (onDone) onDone();
       }
     }, 300); 
     return () => clearInterval(timer);
-  }, [animate, code, scrollRef]);
+  }, [animate, code, onDone, scrollRef]);
 
   const renderLine = (l) => {
     if (l.startsWith('[ERROR]')) return <span className="text-red-400 font-bold">{l}</span>;
@@ -407,7 +433,6 @@ const CLIStream = ({ code, animate, onDone, scrollRef }) => {
     if (l.startsWith('[SUCCESS]')) return <span className="text-emerald-400 font-bold">{l}</span>;
     if (l.startsWith('$')) return <><span className="text-indigo-500 mr-2 select-none">$</span><span className="text-green-300">{l.substring(1)}</span></>;
     if (l.startsWith('>')) return <><span className="text-indigo-500 mr-2 select-none">{'>'}</span><span className="text-green-300">{l.substring(1)}</span></>;
-    if (l.startsWith('- name:')) return <span className="text-purple-300">{l}</span>;
     return <span className="text-slate-300">{l}</span>;
   };
 
@@ -423,7 +448,7 @@ const CLIStream = ({ code, animate, onDone, scrollRef }) => {
         {visibleLines.map((l, i) => (
           <div key={i} className="flex whitespace-pre-wrap">{renderLine(l)}</div>
         ))}
-        {animate && visibleLines.length < lines.length && (
+        {animate && visibleLines.length < code.trim().split('\n').length && (
           <div className="flex">
             <span className="text-indigo-500 mr-3 select-none">$</span>
             <span className="w-2.5 h-4 bg-slate-400 animate-pulse"></span>
@@ -434,12 +459,93 @@ const CLIStream = ({ code, animate, onDone, scrollRef }) => {
   );
 };
 
+const ScriptStream = ({ code, lang, animate, onDone, scrollRef }) => {
+  const [visibleLines, setVisibleLines] = useState(animate ? [] : code.trim().split('\n'));
+  const finishedRef = useRef(!animate);
+  
+  useEffect(() => {
+    const currentLines = code.trim().split('\n');
+    if (finishedRef.current || !animate) {
+      setVisibleLines(currentLines);
+      if (onDone && animate) onDone();
+      return;
+    }
+    
+    let i = 0;
+    const timer = setInterval(() => {
+      setVisibleLines(currentLines.slice(0, i + 1));
+      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      i++;
+      if (i >= currentLines.length) {
+        finishedRef.current = true;
+        clearInterval(timer);
+        if (onDone) onDone();
+      }
+    }, 200); 
+    return () => clearInterval(timer);
+  }, [animate, code, onDone, scrollRef]);
+
+  return (
+    <div className="bg-[#1e1e1e] dark:bg-[#1e1e1e] text-slate-300 p-4 rounded-xl font-mono text-sm shadow-2xl border border-slate-700/80 my-4 overflow-hidden relative group">
+      <div className="flex gap-2 mb-3 border-b border-slate-700 pb-3 items-center">
+         <Cpu className="w-4 h-4 text-indigo-400" />
+         <span className="text-slate-400 text-xs font-sans font-bold uppercase tracking-widest">{lang || 'Script'} Automation</span>
+      </div>
+      <div className="space-y-1 break-all">
+        {visibleLines.map((l, i) => (
+          <div key={i} className="whitespace-pre-wrap">{l}</div>
+        ))}
+        {animate && visibleLines.length < code.trim().split('\n').length && (
+          <div className="w-2.5 h-4 bg-slate-400 animate-pulse mt-1"></div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete }) => {
+  const [currentIndex, setCurrentIndex] = useState(isNew ? 0 : blocks.length);
+
+  useEffect(() => {
+    if (!isNew) setCurrentIndex(blocks.length);
+  }, [isNew, blocks.length]);
+
+  useEffect(() => {
+    if (isNew && currentIndex >= blocks.length) {
+      if (onComplete) onComplete(msgId);
+    }
+  }, [currentIndex, blocks.length, isNew, msgId, onComplete]);
+
+  return (
+    <div className="space-y-1">
+      {blocks.map((block, idx) => {
+        if (idx > currentIndex) return null;
+        if (block.type === 'text') {
+          return <TextStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={scrollRef} />;
+        }
+        if (block.type === 'rca') {
+          return <RcaCardStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={scrollRef} lang={lang} />;
+        }
+        if (block.type === 'res') {
+          return <ResCardStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={scrollRef} lang={lang} />;
+        }
+        if (block.type === 'cli') {
+          return <CLIStream key={idx} code={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={scrollRef} />;
+        }
+        if (block.type === 'script') {
+          return <ScriptStream key={idx} code={block.content} lang={block.lang} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={scrollRef} />;
+        }
+        return null;
+      })}
+    </div>
+  );
+};
+
 export default function App() {
   const [lang, setLang] = useState('ko');
   const [theme, setTheme] = useState('dark');
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 모바일 사이드바 토글 상태
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // 리액트 표준 다크 모드 토글 (html 클래스 주입 방식) - 가장 완벽한 형태
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -451,22 +557,34 @@ export default function App() {
   const [messages, setMessages] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('chat_history');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return parsed.map(m => ({ ...m, isNew: false })); 
+        } catch (e) {
+          console.error("Local storage parsing error", e);
+        }
+      }
     }
     return [];
   });
   
   useEffect(() => {
     if (messages.length === 0) {
-      setMessages([{ role: 'assistant', type: 'INIT', isNew: false }]);
+      setMessages([{ id: 'init-1', role: 'assistant', type: 'INIT', isNew: false }]);
     }
   }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem('chat_history', JSON.stringify(messages));
+      const toSave = messages.map(m => ({ ...m, isNew: false }));
+      localStorage.setItem('chat_history', JSON.stringify(toSave));
     }
   }, [messages]);
+
+  const markMessageAsOld = useCallback((id) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, isNew: false } : m));
+  }, []);
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -475,14 +593,13 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false);
   
   const [activeCLIAction, setActiveCLIAction] = useState(null); 
-  const [tokens, setTokens] = useState({ input: 0, output: 0, total: 0, latest: 'None' });
+  const [tokens, setTokens] = useState({ input: 0, output: 0, total: 0, type: 'NONE', count: 0 });
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
   const messagesEndRef = useRef(null);
   
   const t = dict[lang];
 
-  // 카테고리 통계 (번역본 기준 병합)
   const categoryCounts = kbData[lang].reduce((acc, curr) => {
     const localizedCatName = t.categories[curr.category] || curr.category;
     acc[localizedCatName] = (acc[localizedCatName] || 0) + 1;
@@ -505,6 +622,25 @@ export default function App() {
     }
   };
 
+  const translateMessage = async (text, targetLang, msgId) => {
+    const prompt = `Translate the following IT/infrastructure text to ${targetLang === 'ko' ? 'Korean' : 'English'}. Keep IT terminologies (like EKS, OOMKilled, Nginx, WAS) in English if appropriate. Return ONLY the translated text.\n\nText: ${text}`;
+    try {
+      const res = await fetchGemini({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: "You are an expert IT translator. Provide direct translation without any markdown wrapping or conversational fillers." }] }
+      });
+      const translatedText = res.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (translatedText) {
+        setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: { ...m.content, [targetLang]: translatedText.trim() } } : m));
+        if (res.usageMetadata) {
+           setTokens(prev => ({ ...prev, total: prev.total + res.usageMetadata.totalTokenCount }));
+        }
+      }
+    } catch (e) {
+      console.error("Bg translation err", e);
+    }
+  };
+
   const retrieveContext = (query) => {
     const q = query.toLowerCase();
     const matches = kbData[lang].filter(item => 
@@ -523,15 +659,15 @@ export default function App() {
     if (issues.length === 0) return;
     const item = issues[Math.floor(Math.random() * issues.length)];
 
-    const userText = `[${localizedCatName}] ${lang === 'ko' ? '관련 대표적인 장애 원인과 해결 방법을 알려줘.' : 'Provide the RCA and resolution for this issue category.'}`;
-    
-    setMessages(prev => [...prev, { role: 'user', content: userText, isNew: false }]);
-    setTokens(prev => ({ ...prev, latest: t.cacheHit }));
+    const userMsgId = Date.now().toString() + "-u";
+    setMessages(prev => [...prev, { id: userMsgId, role: 'user', type: 'CATEGORY_PROMPT', category: item.category, isNew: false }]);
+    setTokens(prev => ({ ...prev, type: 'CACHE', count: 0 }));
 
     setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'assistant', type: 'CACHED_RCA', caseId: item.id, isNew: true }]);
+      const aiMsgId = Date.now().toString() + "-a";
+      setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', type: 'CACHED_RCA', caseId: item.id, isNew: true }]);
       setActiveCLIAction(item.id);
-      setIsMobileMenuOpen(false); // 모바일 메뉴 자동 닫기
+      setIsMobileMenuOpen(false);
     }, 400);
   };
 
@@ -539,53 +675,93 @@ export default function App() {
     if (!userText.trim() || isLoading) return;
 
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userText, isNew: false }]);
+    const userMsgId = Date.now().toString() + "-u";
+    setMessages(prev => [...prev, { 
+      id: userMsgId, role: 'user', type: 'CUSTOM_CHAT', 
+      content: { ko: null, en: null, [lang]: userText }, 
+      originalLang: lang, isNew: false 
+    }]);
     setIsLoading(true);
+
+    const targetLang = lang === 'ko' ? 'en' : 'ko';
+    translateMessage(userText, targetLang, userMsgId);
 
     const context = retrieveContext(userText);
     
-    const systemInstruction = `당신은 15년 이상의 경력을 가진 최상급 클라우드 시니어 엔지니어(AI 에이전트)입니다.
+    const systemInstruction = `당신은 인프라 트러블슈팅 AI 에이전트입니다.
 [지침]:
-1. **기술적 검증 필수:** 답변을 생성하기 전, 아키텍처 원리와 장애 해결책이 기술적으로 100% 정확한지 교차 검증하세요.
-2. 현재 언어 설정(${lang === 'ko' ? '한국어' : 'English'})에 맞추어 전문적인 톤으로 답변하세요.
-3. **절대로 마크다운 코드 블록(bash 등)이나 터미널 로그를 직접 출력하지 마세요.**
-4. 원인(RCA)은 반드시 <RCA>여기에 원인 설명 작성</RCA> 태그로 감싸고, 조치 방안(Resolution)은 반드시 <RES>여기에 조치 방안 작성</RES> 태그로 감싸서 출력하세요. 그래야 UI에서 예쁜 카드로 렌더링됩니다.
-5. 답변 마지막에는 항상 "상세 터미널 로그 및 복구 스크립트는 좌측의 **[${t.cliRun}]** 버튼을 클릭하여 확인하세요." 라고 안내하세요.
+1. 기술적 검증: 답변을 생성하기 전, 아키텍처 원리와 장애 해결책이 기술적으로 100% 정확한지 속으로 면밀하게 교차 검증하세요.
+2. 톤앤매너: 현재 언어 설정(${lang === 'ko' ? '한국어' : 'English'})에 맞추어 전문적이고 신뢰감 있는 톤으로 답변하세요.
+
+[상황 A: 사용자의 질문이 아래 'Knowledge Base' 항목과 일치하거나 거의 유사한 경우]
+- 반드시 답변 첫 줄에 "[MATCHED_KB_ID: 해당ID]" 를 출력하세요. (예: [MATCHED_KB_ID: TS-LINUX-001])
+- 원인(RCA)은 <RCA>...</RCA>, 조치 방안(Resolution)은 <RES>...</RES> 태그로 감싸서 설명하세요.
+- 마크다운 코드 블록(bash, yaml 등)은 절대 출력하지 마세요!
+- 답변 마지막에 반드시 "상세 터미널 로그 및 자동화 스크립트는 좌측의 **[${t.cliRun}]** 버튼을 클릭하여 확인하세요." 라고 안내하세요.
+
+[상황 B: 사용자의 질문이 'Knowledge Base'에 없는 새로운 장애이거나 일반 기술 질문인 경우]
+- MATCHED_KB_ID 태그를 절대 출력하지 마세요.
+- 원인(RCA)과 조치 방안(Resolution)을 <RCA>, <RES> 태그로 감싸서 논리적으로 설명하세요.
+- 터미널 커맨드, 로그, 자동화 스크립트(Terraform, Ansible 등)가 필요하다면 반드시 마크다운 코드 블록(\u0060\u0060\u0060bash, \u0060\u0060\u0060yaml 등)을 사용하여 직접 작성해 제공하세요.
+- "버튼을 클릭하여 확인하세요"와 같은 안내 문구는 절대 출력하지 마세요. (버튼이 없기 때문입니다.)
 
 [Knowledge Base]:
-${context}`;
+${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause}\nResolution: ${m.resolution}`).join('\n\n')}
+`;
 
     const contents = messages
-      .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && m.type === 'CUSTOM_CHAT')
       .map(m => ({
         role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }]
+        parts: [{ text: m.content[lang] || m.content[m.originalLang] }]
       }));
     contents.push({ role: 'user', parts: [{ text: userText }] });
 
     try {
       const result = await fetchGemini({ contents, systemInstruction: { parts: [{ text: systemInstruction }] } });
-      const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+      let reply = result.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
       
+      const matchIdRegex = /\[MATCHED_KB_ID:\s*([A-Z0-9-]+)\]/i;
+      const match = reply.match(matchIdRegex);
+      let matchedId = null;
+      
+      if (match) {
+        matchedId = match[1];
+        reply = reply.replace(matchIdRegex, '').trim(); 
+      }
+
       if (result.usageMetadata) {
         setTokens(prev => ({
           input: prev.input + result.usageMetadata.promptTokenCount,
           output: prev.output + result.usageMetadata.candidatesTokenCount,
           total: prev.total + result.usageMetadata.totalTokenCount,
-          latest: t.apiHit.replace('{tokens}', result.usageMetadata.totalTokenCount.toLocaleString())
+          type: 'API',
+          count: result.usageMetadata.totalTokenCount
         }));
       }
 
-      setMessages(prev => [...prev, { role: 'assistant', content: reply, isNew: true }]);
+      const aiMsgId = Date.now().toString() + "-a";
+      setMessages(prev => [...prev, { 
+        id: aiMsgId, role: 'assistant', type: 'CUSTOM_CHAT', 
+        content: { ko: null, en: null, [lang]: reply }, 
+        originalLang: lang, isNew: true 
+      }]);
       
-      const q = userText.toLowerCase();
-      const matchedCases = kbData[lang].filter(item => item.title.toLowerCase().includes(q) || item.rootCause.toLowerCase().includes(q));
-      if (matchedCases.length > 0) {
-        setActiveCLIAction(matchedCases[0].id);
+      translateMessage(reply, targetLang, aiMsgId);
+
+      if (matchedId) {
+        setActiveCLIAction(matchedId); 
+      } else {
+        setActiveCLIAction(null); 
       }
 
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${error.message}`, isNew: false }]);
+      const errMsgId = Date.now().toString() + "-e";
+      setMessages(prev => [...prev, { 
+        id: errMsgId, role: 'assistant', type: 'CUSTOM_CHAT', 
+        content: { ko: null, en: null, [lang]: `Error: ${error.message}` }, 
+        originalLang: lang, isNew: false 
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -594,7 +770,7 @@ ${context}`;
   const triggerSelectedSimulation = () => {
     if (isSimulating) return;
     setIsSimulating(true);
-    setIsMobileMenuOpen(false); // 모바일 메뉴 자동 닫기
+    setIsMobileMenuOpen(false); 
     
     const randomIdx = Math.floor(Math.random() * kbData[lang].length);
     const targetCase = kbData[lang][randomIdx];
@@ -610,61 +786,52 @@ ${context}`;
     setActiveIncidents(incidents);
 
     setTimeout(() => {
-      setToasts([]); 
-      setMessages(prev => [...prev, { role: 'system', type: 'SIM_RCA', caseId: targetCase.id, isNew: true }]);
+      setToasts([]);
+      const sysMsgId = Date.now().toString() + "-sys";
+      setMessages(prev => [...prev, { id: sysMsgId, role: 'system', type: 'SIM_RCA', caseId: targetCase.id, isNew: true }]);
       setActiveCLIAction(targetCase.id); 
     }, 5000);
   };
 
   const handleCLIAction = (actionId) => {
     setActiveCLIAction(null); 
-    setMessages(prev => [...prev, { role: 'assistant', type: 'CLI_ACTION', caseId: actionId, isNew: true }]);
+    const cliMsgId = Date.now().toString() + "-cli";
+    setMessages(prev => [...prev, { id: cliMsgId, role: 'assistant', type: 'CLI_ACTION', caseId: actionId, isNew: true }]);
     setActiveIncidents([]); 
     setIsSimulating(false);
   };
 
-  const getDynamicContent = (msg) => {
-    if (msg.content) return msg.content; 
+  const getDynamicContent = (msg, currentLang) => {
+    if (msg.type === 'CUSTOM_CHAT') {
+      return msg.content[currentLang] || msg.content[msg.originalLang] || "";
+    }
     
-    if (msg.type === 'INIT') return t.initMsg;
+    if (msg.type === 'INIT') return dict[currentLang].initMsg;
+
+    if (msg.type === 'CATEGORY_PROMPT') {
+      const localizedCat = dict[currentLang].categories[msg.category] || msg.category;
+      return `[${localizedCat}] ${currentLang === 'ko' ? '관련 대표적인 장애 원인과 해결 방법을 알려줘.' : 'Provide the RCA and resolution for this issue category.'}`;
+    }
     
-    const kb = kbData[lang].find(c => c.id === msg.caseId);
-    if (!kb) return "";
+    const kb = kbData[currentLang].find(c => c.id === msg.caseId);
+    if (!kb) return msg.content || "";
 
     if (msg.type === 'SIM_RCA') {
-      return t.simRcaMsg.replace('{title}', kb.title).replace('{rootCause}', kb.rootCause);
+      return dict[currentLang].simRcaMsg.replace('{title}', kb.title).replace('{rootCause}', kb.rootCause);
     }
     if (msg.type === 'CACHED_RCA') {
-      return t.cachedReply.replace('{title}', kb.title).replace('{rootCause}', kb.rootCause).replace('{resolution}', kb.resolution);
+      return dict[currentLang].cachedReply.replace('{title}', kb.title).replace('{rootCause}', kb.rootCause).replace('{resolution}', kb.resolution);
     }
     if (msg.type === 'CLI_ACTION') {
-      return t.cliContent.replace('{cliMock}', kb.cliMock).replace('{insight}', kb.insight);
+      return dict[currentLang].cliContent.replace('{cliMock}', kb.cliMock).replace('{insight}', kb.insight);
     }
     return "";
   };
 
-  const SequenceRenderer = ({ blocks, isNew, lang }) => {
-    const [currentIndex, setCurrentIndex] = useState(isNew ? 0 : blocks.length);
-    return (
-      <div className="space-y-1">
-        {blocks.map((block, idx) => {
-          if (idx > currentIndex) return null;
-          if (block.type === 'text') {
-            return <TextStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} />;
-          }
-          if (block.type === 'rca') {
-            return <RcaCardStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} lang={lang} />;
-          }
-          if (block.type === 'res') {
-            return <ResCardStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} lang={lang} />;
-          }
-          if (block.type === 'cli') {
-            return <CLIStream key={idx} code={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} />;
-          }
-          return null;
-        })}
-      </div>
-    );
+  const getLatestTokenStr = () => {
+    if (tokens.type === 'CACHE') return t.cacheHit;
+    if (tokens.type === 'API') return t.apiHit.replace('{tokens}', tokens.count.toLocaleString());
+    return `${t.lastLabel} None`;
   };
 
   return (
@@ -688,7 +855,7 @@ ${context}`;
         />
       )}
 
-      {/* Sidebar (Responsive Slide-in) */}
+      {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0`}>
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -700,7 +867,6 @@ ${context}`;
               <span className="text-[11px] text-indigo-500 dark:text-indigo-400 font-mono tracking-widest">{t.subtitle}</span>
             </div>
           </div>
-          {/* 모바일에서 사이드바 닫기 버튼 */}
           <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white">
             <X className="w-6 h-6" />
           </button>
@@ -739,7 +905,7 @@ ${context}`;
           </div>
 
           <h2 className="text-[11px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <Cpu className="w-4 h-4" /> FinOps Token Monitor
+            <Cpu className="w-4 h-4" /> {t.finopsTitle}
           </h2>
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
             <div className="text-center mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50">
@@ -754,7 +920,9 @@ ${context}`;
               <span className="text-slate-600 dark:text-slate-500 font-bold">{t.outputLabel}</span>
               <span className="text-teal-600 dark:text-teal-300 font-bold">{tokens.output.toLocaleString()}</span>
             </div>
-            <div className="text-[10px] text-slate-500 text-center font-bold text-green-600 dark:text-green-400">{t.lastLabel} {tokens.latest}</div>
+            <div className="text-[10px] text-slate-500 text-center font-bold text-green-600 dark:text-green-400">
+               {getLatestTokenStr()}
+            </div>
           </div>
 
           {activeCLIAction && (
@@ -775,7 +943,6 @@ ${context}`;
       <main className="flex-1 flex flex-col h-full relative bg-slate-50 dark:bg-[#0B1120]">
         <header className="h-14 bg-white/80 dark:bg-[#0B1120]/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-between md:justify-end items-center px-4 md:px-6 z-20 shrink-0 gap-4 transition-colors duration-300">
            
-           {/* Mobile Menu Toggle */}
            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white">
              <Menu className="w-6 h-6" />
            </button>
@@ -815,28 +982,27 @@ ${context}`;
            </div>
         </header>
 
-        {/* 채팅 내역 스크롤 영역 */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar scroll-smooth">
           <div className="max-w-4xl mx-auto space-y-6 pb-4">
-            {messages.map((msg, idx) => {
+            {messages.map((msg) => {
               const isUser = msg.role === 'user';
               const isSystem = msg.role === 'system';
               
-              const dynamicContent = getDynamicContent(msg);
+              const dynamicContent = getDynamicContent(msg, lang);
               const blocks = parseMessageBlocks(dynamicContent);
 
               return (
-                <div key={idx} className={`flex ${isUser ? 'justify-end' : 'justify-start'} flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'} flex-col ${isUser ? 'items-end' : 'items-start'}`}>
                   <div className={`
                     max-w-[95%] md:max-w-[85%] rounded-2xl p-5 shadow-sm
                     ${isUser 
-                      ? 'bg-indigo-600 text-white rounded-tr-none' 
+                      ? 'bg-indigo-100 dark:bg-indigo-600 text-indigo-900 dark:text-white border border-indigo-200 dark:border-indigo-500/30 rounded-tr-none' 
                       : isSystem 
                         ? 'bg-red-50 dark:bg-slate-900 border-2 border-red-500/30 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-[0_0_20px_rgba(239,68,68,0.1)]'
                         : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-lg'
                     }
                   `}>
-                    <div className={`flex items-center gap-2 mb-3 border-b pb-2 ${isUser ? 'opacity-80 border-white/20' : 'opacity-60 border-slate-300 dark:border-slate-600'}`}>
+                    <div className={`flex items-center gap-2 mb-3 border-b pb-2 ${isUser ? 'opacity-80 border-indigo-300 dark:border-white/20' : 'opacity-60 border-slate-300 dark:border-slate-600'}`}>
                       {isUser ? <Smartphone className="w-4 h-4" /> : isSystem ? <ShieldAlert className="w-4 h-4 text-red-500 dark:text-red-400" /> : <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
                       <span className="text-xs font-bold uppercase tracking-wider">
                         {isUser ? t.you : isSystem ? t.sysAnal : t.agent}
@@ -844,11 +1010,14 @@ ${context}`;
                     </div>
                     
                     <div className="text-sm md:text-base break-words font-medium">
-                      {isUser ? (
-                        <div className="whitespace-pre-wrap">{dynamicContent}</div>
-                      ) : (
-                        <SequenceRenderer blocks={blocks} isNew={msg.isNew} lang={lang} />
-                      )}
+                      <SequenceRenderer 
+                        msgId={msg.id} 
+                        blocks={blocks} 
+                        isNew={msg.isNew} 
+                        lang={lang} 
+                        scrollRef={messagesEndRef} 
+                        onComplete={markMessageAsOld} 
+                      />
                     </div>
                   </div>
                 </div>
@@ -882,7 +1051,6 @@ ${context}`;
           </div>
         )}
 
-        {/* --- 항시 고정된 하단 영역 (버튼 메뉴 + 입력창) --- */}
         <div className="bg-white/90 dark:bg-[#0B1120]/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 flex flex-col pb-safe shrink-0 transition-colors duration-300 relative z-30">
           
           <div className="max-w-4xl mx-auto w-full px-4 pt-4">
