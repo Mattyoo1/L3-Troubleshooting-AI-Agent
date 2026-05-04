@@ -3,7 +3,7 @@ import {
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle, 
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity, 
   HelpCircle, Loader2, Send, BarChart3, Globe, Sun, Moon,
-  Menu, X, CheckCircle, Zap
+  Menu, X, CheckCircle, Zap, Calendar, CalendarDays
 } from 'lucide-react';
 
 // --- 사내 지식 베이스 (Troubleshooting Data) ---
@@ -43,7 +43,7 @@ const kbData = {
     },
     {
       id: "TS-NCP-005", category: "Cloud / IaC",
-      title: "NCP Terraform VM 프로비저닝 실패 및 동적 데이터 소스 리팩토링",
+      title: "NCP Terraform VM Provisioning 실패 및 동적 데이터 소스 리팩토링",
       rootCause: "OS 이미지 및 스펙에 하드코딩된 정적 상품 코드를 사용하여 드리프트 발생. NCP API가 'terraform apply' 중 사용되지 않는 이미지 코드를 거부함.",
       resolution: "정규식을 사용하여 런타임에 가장 최신의 호환 가능한 스펙 코드를 동적으로 가져오는 'data' 소스 방식으로 리팩토링.",
       cliMock: "[ERROR] ncloud_server: Bad Request: InvalidServerImageProductCode\n$ vi server.tf\n[INFO] Changing hardcoded 'SVR0000000X' to dynamic data.ncloud_server_image.ubuntu24.id\n$ terraform plan\n[INFO] Plan: 2 to add, 0 to change, 0 to destroy.\n$ terraform apply -auto-approve\n[SUCCESS] VM Provisioned completely with idempotent infrastructure code.",
@@ -52,15 +52,15 @@ const kbData = {
     {
       id: "TS-DB-006", category: "Database / HA",
       title: "MariaDB MHA 복제: Binlog 실패 및 시스템 테이블 초기화 버그",
-      rootCause: "my.cnf의 구형 파라미터로 인해 데몬 시작 실패. 바이너리 수동 설치 시 시스템 테이블 생성을 건너뛰어 'mysql' DB가 비어있고 binlog 엔진이 실패함.",
-      resolution: "사용 중단된 thread_concurrency 제거. mysql_install_db를 수동으로 실행하여 핵심 테이블 생성. log-bin 활성화 후 스냅샷 덤프.",
+      rootCause: "Legacy my.cnf params caused startup halts. Manual binary install bypassed system table creation, leaving 'mysql' DB empty and binlog engine failed.",
+      resolution: "Removed deprecated thread_concurrency. Executed mysql_install_db manually to generate core dictionary. Enabled log-bin and exported master snapshot.",
       cliMock: "[ERROR] Error: Binlogging on server not active\n[Warning] 'THREAD_CONCURRENCY' is deprecated\n$ sudo sed -i '/thread_concurrency/s/^/#/' /etc/mysql/my.cnf\n$ sudo /usr/local/mysql/scripts/mysql_install_db --user=mysql --basedir=/usr/local/mysql\n[INFO] Installing MariaDB/MySQL system tables in '/usr/local/mysql/data' ... OK\n$ sudo systemctl restart mariadb\n$ mysqldump -u root -p --all-databases --master-data > all.sql\n[SUCCESS] Binlog active. Master data dump exported.",
       insight: "**[데이터베이스 아키텍처 조언]**\n바이너리 수동 설치 시 \u0060mysql_install_db\u0060가 누락되면 권한, 복제 관리 테이블이 생성되지 않아 치명적입니다. 배포 스크립트에 \u0060if [ ! -d /usr/local/mysql/data/mysql ]; then ...\u0060 방어 로직을 추가하세요."
     },
     {
       id: "TS-DB-007", category: "Database / HA",
       title: "MariaDB MHA 클러스터: 복제 에러 1593 및 소스 빌드",
-      rootCause: "Slave 데몬이 기본값인 server-id=1로 켜져 무한 루프 블록 발생. 자동 페일오버를 위한 MHA 의존성 패키지가 누락됨.",
+      rootCause: "Slave daemon defaulted to server-id=1 causing an infinite loop block. Standard apt lacked full MHA dependencies for automated failover.",
       resolution: "server-id 충돌 수정 (Master=1, Slave1=2, Slave2=3). 소스에서 MHA Manager 컴파일 및 양방향 패스워드 없는 SSH 신뢰 구축.",
       cliMock: "[ERROR] Last_IO_Errno: 1593\n[ERROR] Fatal error: master and slave have equal MySQL server ids\n$ ssh root@db-slave-01\n$ sed -i 's/server-id=1/server-id=2/' /etc/mysql/my.cnf\n$ systemctl restart mariadb\n$ mysql -e \"STOP SLAVE; START SLAVE; SHOW SLAVE STATUS\\G\" | grep Running\n[INFO] Slave_IO_Running: Yes\n[INFO] Slave_SQL_Running: Yes\n[SUCCESS] Server ID collision resolved. Replication synced.",
       insight: "**[Ansible을 활용한 MHA 자동화 스크립트 (auto-failover.yml)]**\n\u0060\u0060\u0060yaml\n- name: Deploy MHA Node Dependencies\n  apt:\n    name: ['libdbd-mysql-perl', 'libconfig-tiny-perl', 'liblog-dispatch-perl', 'libparallel-forkmanager-perl']\n    state: present\n\u0060\u0060\u0060\n필수 의존성 패키지를 미리 정의하여 신속하게 Failover 클러스터를 확장할 수 있습니다."
@@ -68,26 +68,26 @@ const kbData = {
     {
       id: "TS-DB-008", category: "Database / Disaster Recovery",
       title: "MariaDB 시스템 DB 손상 복구 및 MHA SSH PAM 우회",
-      rootCause: "크래시로 인한 'mysql' 테이블스페이스 손상. SSH 'UsePAM yes' 설정이 키보드 대화형 로그인을 강제하여 MHA의 RSA 인증을 덮어씀.",
-      resolution: "시스템 DB 삭제 후 재생성. mysqld_safe --skip-grant-tables를 사용하여 관리자 유저 복구. SSH 설정에서 UsePAM을 비활성화.",
+      rootCause: "Crash corrupted 'mysql' tablespace. SSH 'UsePAM yes' configuration enforced keyboard-interactive login, overriding RSA Key authentication for MHA.",
+      resolution: "Wiped and rebuilt system DB. Used mysqld_safe --skip-grant-tables to restore admin users. Disabled UsePAM in sshd_config to allow MHA passwordless access.",
       cliMock: "[ERROR] OS error: 71, cannot find file /db/data/mysql\n[ERROR] Access Denied for user 'root'\n$ mysqld_safe --skip-grant-tables &\n[INFO] MariaDB started securely bypassing grant tables.\n$ mysql -e \"FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'newpwd';\"\n$ sed -i 's/^UsePAM yes/UsePAM no/' /etc/ssh/sshd_config\n$ systemctl restart sshd\n[SUCCESS] MHA Manager Passwordless SSH authentication successful.",
-      insight: "**[L3 엔지니어의 보안 아키텍처 제안]**\n\u0060UsePAM yes\u0060는 MHA의 \u0060authorized_keys\u0060 인증을 무력화시킵니다. 시스템 복구 시 사용한 \u0060mysqld_safe\u0060는 백도어이므로, 복구 후 프로세스를 죽이고(\u0060kill -9\u0060) 정상 데몬으로 재기동하여 보안 공백을 차단해야 합니다."
+      insight: "**[L3 엔지니어의 보안 아키텍처 제안]**\n\u0060UsePAM yes\u0060 overrides MHA's \u0060authorized_keys\u0060 auth by enforcing PAM plugins. Also, since \u0060mysqld_safe\u0060 acts as a backdoor during recovery, ensure you kill the process (\u0060kill -9\u0060) and restart normally to close security gaps."
     },
     {
       id: "TS-IDE-009", category: "DevOps / Tooling",
       title: "VS Code Remote-SSH 접속 실패 및 캐시 손상",
-      rootCause: "Windows OpenSSH가 과도한 ACL 권한으로 인해 .pem 키를 거부함. 비정상 종료된 세션으로 인해 원격 VS Code 서버 데몬이 손상됨.",
-      resolution: "키의 Windows ACL 상속을 비활성화(사용자 권한만 부여). 서브 클라이언트를 통해 원격 VM에서 'rm -rf ~/.vscode-server'를 실행하여 캐시 퍼지.",
+      rootCause: "Windows OpenSSH rejected the .pem key due to over-permissive ACLs. Remote VS Code server daemon was locked/corrupted from a terminated session.",
+      resolution: "Disabled Windows ACL inheritance on the key (granting only user control). Executed 'rm -rf ~/.vscode-server' on the remote VM via secondary client to purge cache.",
       cliMock: "[ERROR] Permission denied (publickey).\n[ERROR] Bad owner or permissions on C:\\Users\\...\\.ssh\\config\n# Windows PowerShell (Client)\n> icacls mykey.pem /inheritance:r\n> icacls mykey.pem /grant:r \"%USERNAME%:R\" /remove \"Authenticated Users\" /remove \"BUILTIN\\Administrators\"\n# Ubuntu Remote (Server)\n$ rm -rf ~/.vscode-server\n[SUCCESS] Corrupted daemon cache cleared. Remote-SSH connection established.",
       insight: "**[VS Code 원격 개발 환경 최적화 팁]**\n윈도우에서 리눅스로 접근할 때 \u0060.pem\u0060 키의 권한(ACL)이 열려있으면 연결을 차단합니다. 리눅스의 \u0060chmod 400\u0060과 동일하게 파일 속성에서 '상속 해제' 후 본인 계정만 남기면 깔끔하게 해결됩니다."
     },
     {
       id: "TS-WEB-010", category: "Middleware / Web-WAS",
-      title: "Apache2 & Tomcat 9 연동 실패: AJP 보안 미스매치",
+      title: "Apache2 & Tomcat 9 Integration Failure: AJP Security Mismatch",
       rootCause: "Tomcat 9.0.31 이상의 Ghostcat 패치로 인해 AJP가 기본 비활성화되고 secretRequired=\"true\"가 강제되어 mod_jk 요청이 거부됨.",
       resolution: "server.xml에서 AJP Connector를 활성화하고 address=\"0.0.0.0\" 및 secretRequired=\"false\"로 변경. Apache JkMount 설정 재확인.",
       cliMock: "[ERROR] 503 Service Unavailable\n[ERROR] ajp_connect_to_endpoint::jk_ajp_common.c (1064): failed to connect to Tomcat AJP\n$ vi /usr/local/tomcat/conf/server.xml\n[INFO] Uncommented AJP Connector and added address=\"0.0.0.0\" secretRequired=\"false\"\n$ vi /etc/apache2/workers.properties\n$ systemctl restart tomcat9 apache2\n[SUCCESS] HTTP 200 OK. Apache successfully reverse-proxied to Tomcat via AJP.",
-      insight: "**[Ghostcat(CVE-2020-1938) 보안 대응 가이드]**\n단순 연동을 위해 \u0060secretRequired=\"false\"\u0060를 적용하는 것은 편하지만, 실무에서는 \u0060secretRequired=\"true\"\u0060를 유지하고 \u0060server.xml\u0060과 \u0060workers.properties\u0060 양쪽에 시크릿 키를 부여하여 내부 AJP 통신의 스니핑을 방어하는 것이 스탠다드입니다."
+      insight: "**[Ghostcat (CVE-2020-1938) 보안 대응 가이드]**\n단순 연동을 위해 \u0060secretRequired=\"false\"\u0060를 적용하는 것은 편하지만, 실무에서는 \u0060secretRequired=\"true\"\u0060를 유지하고 \u0060server.xml\u0060과 \u0060workers.properties\u0060 양쪽에 시크릿 키를 부여하여 내부 AJP 통신의 스니핑을 방어하는 것이 스탠다드입니다."
     }
   ],
   en: [
@@ -201,6 +201,10 @@ const dict = {
     cliContent: "복구 파이프라인 및 터미널 엑세스를 통해 조치를 시작합니다.\n\n\u0060\u0060\u0060bash\n{cliMock}\n\u0060\u0060\u0060\n\n{insight}",
     cacheHit: "Last: 0 토큰 (Cache Hit - 비용 0원)",
     apiHit: "Last: {tokens} 토큰 (API 호출)",
+    dailyTrend: "일별 사용 추이",
+    monthlyTrend: "월별 사용 추이",
+    dailyBtn: "일별",
+    monthlyBtn: "월별",
     categories: {
       "OS / GUI": "OS 장애",
       "Cloud / Network": "네트워크 장애",
@@ -239,6 +243,10 @@ const dict = {
     cliContent: "Initiating recovery through the pipeline and terminal access.\n\n\u0060\u0060\u0060bash\n{cliMock}\n\u0060\u0060\u0060\n\n{insight}",
     cacheHit: "Last: 0 Tokens (Cache Hit - $0)",
     apiHit: "Last: {tokens} Tokens (API Call)",
+    dailyTrend: "Daily Trend",
+    monthlyTrend: "Monthly Trend",
+    dailyBtn: "Daily",
+    monthlyBtn: "Monthly",
     categories: {
       "OS / GUI": "OS Issue",
       "Cloud / Network": "Network Issue",
@@ -541,6 +549,118 @@ const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete })
   );
 };
 
+// 💡 새로운 컴포넌트: 토큰 사용량 동적 막대그래프
+const TokenTrendChart = ({ history, lang, currentTokens }) => {
+  const [chartView, setChartView] = useState('daily'); // 'daily' | 'monthly'
+  const t = dict[lang];
+
+  // 그래프 데이터를 생성하는 함수
+  const getChartData = () => {
+    const data = [];
+    const today = new Date();
+
+    if (chartView === 'daily') {
+      // 최근 7일 (Daily)
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        
+        // 오늘 날짜인 경우 현재 세션의 토큰양을 합산하여 실시간 반영
+        let val = history[dateStr] || 0;
+        if (i === 0 && currentTokens > 0) val += currentTokens;
+
+        data.push({
+          label: `${d.getMonth() + 1}/${d.getDate()}`,
+          value: val,
+          key: dateStr
+        });
+      }
+    } else {
+      // 최근 6개월 (Monthly)
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        data.push({
+          label: lang === 'ko' ? `${d.getMonth() + 1}월` : d.toLocaleString('en-US', { month: 'short' }),
+          value: 0,
+          key: monthStr
+        });
+      }
+      
+      // 기록된 데이터에서 해당 월의 총합 계산
+      Object.keys(history).forEach(dateStr => {
+        const mStr = dateStr.substring(0, 7);
+        const target = data.find(m => m.key === mStr);
+        if (target) target.value += history[dateStr];
+      });
+
+      // 오늘 날짜가 속한 달에 현재 세션의 토큰량 합산
+      const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+      const currentMonthTarget = data.find(m => m.key === currentMonthStr);
+      if (currentMonthTarget && currentTokens > 0) {
+        currentMonthTarget.value += currentTokens;
+      }
+    }
+    return data;
+  };
+
+  const chartData = getChartData();
+  const maxVal = Math.max(...chartData.map(d => d.value), 1000); // 0으로 나누기 방지, 기본값 1000
+
+  return (
+    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+      <div className="flex justify-between items-center mb-3">
+        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1">
+          {chartView === 'daily' ? <CalendarDays className="w-3 h-3" /> : <Calendar className="w-3 h-3" />}
+          {chartView === 'daily' ? t.dailyTrend : t.monthlyTrend}
+        </span>
+        <div className="flex gap-2 text-[9px] font-bold uppercase">
+          <button 
+            onClick={() => setChartView('daily')} 
+            className={`transition-colors ${chartView === 'daily' ? 'text-indigo-500 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+          >
+            {t.dailyBtn}
+          </button>
+          <span className="text-slate-300 dark:text-slate-700">|</span>
+          <button 
+            onClick={() => setChartView('monthly')} 
+            className={`transition-colors ${chartView === 'monthly' ? 'text-indigo-500 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+          >
+            {t.monthlyBtn}
+          </button>
+        </div>
+      </div>
+      
+      <div className="flex items-end justify-between h-16 gap-1 mt-4">
+        {chartData.map((d, i) => {
+          const heightPct = (d.value / maxVal) * 100;
+          return (
+            <div key={i} className="flex flex-col items-center flex-1 group relative h-full justify-end">
+               {/* 툴팁 */}
+               <div className="opacity-0 group-hover:opacity-100 absolute -top-7 bg-slate-800 dark:bg-white text-white dark:text-slate-900 text-[9px] py-1 px-2 rounded font-bold transition-opacity whitespace-nowrap z-10 shadow-lg pointer-events-none">
+                 {d.value.toLocaleString()}
+                 <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 dark:bg-white rotate-45"></div>
+               </div>
+               
+               {/* 막대 바 */}
+               <div className="w-full bg-slate-200 dark:bg-slate-800/50 rounded-t-sm flex items-end justify-center relative overflow-hidden" style={{ height: '100%' }}>
+                 <div 
+                   className="w-full bg-indigo-500/80 dark:bg-indigo-500 transition-all duration-700 rounded-t-sm group-hover:bg-indigo-400" 
+                   style={{ height: `${Math.max(heightPct, 2)}%` }} // 최소 높이 2% 보장
+                 ></div>
+               </div>
+               
+               {/* 라벨 */}
+               <span className="text-[9px] text-slate-500 dark:text-slate-400 mt-1.5 font-medium">{d.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [lang, setLang] = useState('ko');
   const [theme, setTheme] = useState('dark');
@@ -582,8 +702,30 @@ export default function App() {
     }
   }, [messages]);
 
+  // 💡 로컬 스토리지에 날짜별 토큰 사용량 저장 상태 추가
+  const [tokenHistory, setTokenHistory] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('token_history');
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      }
+    }
+    return {};
+  });
+
   const markMessageAsOld = useCallback((id) => {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, isNew: false } : m));
+  }, []);
+
+  // API 호출 시 히스토리에 누적하는 함수
+  const updateTokenHistory = useCallback((newTokens) => {
+    if (newTokens <= 0) return;
+    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    setTokenHistory(prev => {
+      const updated = { ...prev, [today]: (prev[today] || 0) + newTokens };
+      localStorage.setItem('token_history', JSON.stringify(updated));
+      return updated;
+    });
   }, []);
 
   const [input, setInput] = useState('');
@@ -608,7 +750,15 @@ export default function App() {
   const maxCategoryCount = Math.max(...Object.values(categoryCounts));
 
   const fetchGemini = async (payload) => {
-    const apiKey = "";
+    let apiKey = "";
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      }
+    } catch (e) {
+      // ignore
+    }
+    
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
@@ -632,8 +782,9 @@ export default function App() {
       const translatedText = res.candidates?.[0]?.content?.parts?.[0]?.text;
       if (translatedText) {
         setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: { ...m.content, [targetLang]: translatedText.trim() } } : m));
-        if (res.usageMetadata) {
+        if (res.usageMetadata && res.usageMetadata.totalTokenCount) {
            setTokens(prev => ({ ...prev, total: prev.total + res.usageMetadata.totalTokenCount }));
+           updateTokenHistory(res.usageMetadata.totalTokenCount); // 백그라운드 번역 비용 차트 기록
         }
       }
     } catch (e) {
@@ -702,7 +853,7 @@ export default function App() {
 [상황 B: 사용자의 질문이 'Knowledge Base'에 없는 새로운 장애이거나 일반 기술 질문인 경우]
 - MATCHED_KB_ID 태그를 절대 출력하지 마세요.
 - 원인(RCA)과 조치 방안(Resolution)을 <RCA>, <RES> 태그로 감싸서 논리적으로 설명하세요.
-- 터미널 커맨드, 로그, 자동화 스크립트(Terraform, Ansible 등)가 필요하다면 반드시 마크다운 코드 블록(\u0060\u0060\u0060bash, \u0060\u0060\u0060yaml 등)을 사용하여 직접 작성해 제공하세요.
+- 터미널 커맨드, 로그, 자동화 스크립트(Terraform, Ansible 등)가 필요하다면 반드시 마크다운 코드 블록(\`\`\`bash, \`\`\`yaml 등)을 사용하여 직접 작성해 제공하세요.
 - "버튼을 클릭하여 확인하세요"와 같은 안내 문구는 절대 출력하지 마세요. (버튼이 없기 때문입니다.)
 
 [Knowledge Base]:
@@ -730,7 +881,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         reply = reply.replace(matchIdRegex, '').trim(); 
       }
 
-      if (result.usageMetadata) {
+      if (result.usageMetadata && result.usageMetadata.totalTokenCount) {
         setTokens(prev => ({
           input: prev.input + result.usageMetadata.promptTokenCount,
           output: prev.output + result.usageMetadata.candidatesTokenCount,
@@ -738,6 +889,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
           type: 'API',
           count: result.usageMetadata.totalTokenCount
         }));
+        updateTokenHistory(result.usageMetadata.totalTokenCount); // 메인 대화 비용 차트 기록
       }
 
       const aiMsgId = Date.now().toString() + "-a";
@@ -805,17 +957,13 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     if (msg.type === 'CUSTOM_CHAT') {
       return msg.content[currentLang] || msg.content[msg.originalLang] || "";
     }
-    
     if (msg.type === 'INIT') return dict[currentLang].initMsg;
-
     if (msg.type === 'CATEGORY_PROMPT') {
       const localizedCat = dict[currentLang].categories[msg.category] || msg.category;
       return `[${localizedCat}] ${currentLang === 'ko' ? '관련 대표적인 장애 원인과 해결 방법을 알려줘.' : 'Provide the RCA and resolution for this issue category.'}`;
     }
-    
     const kb = kbData[currentLang].find(c => c.id === msg.caseId);
     if (!kb) return msg.content || "";
-
     if (msg.type === 'SIM_RCA') {
       return dict[currentLang].simRcaMsg.replace('{title}', kb.title).replace('{rootCause}', kb.rootCause);
     }
@@ -920,9 +1068,13 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
               <span className="text-slate-600 dark:text-slate-500 font-bold">{t.outputLabel}</span>
               <span className="text-teal-600 dark:text-teal-300 font-bold">{tokens.output.toLocaleString()}</span>
             </div>
-            <div className="text-[10px] text-slate-500 text-center font-bold text-green-600 dark:text-green-400">
+            <div className="text-[10px] text-slate-500 text-center font-bold text-green-600 dark:text-green-400 mb-2">
                {getLatestTokenStr()}
             </div>
+            
+            {/* 💡 새로운 토큰 사용량 차트 연동 */}
+            <TokenTrendChart history={tokenHistory} lang={lang} currentTokens={tokens.total} />
+
           </div>
 
           {activeCLIAction && (
