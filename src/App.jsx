@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle, 
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity, 
-  HelpCircle, Loader2, Send, BarChart3, Globe, Sun, Moon
+  HelpCircle, Loader2, Send, BarChart3, Globe, Sun, Moon,
+  Menu, X, CheckCircle, Zap
 } from 'lucide-react';
 
 // --- 사내 지식 베이스 (Troubleshooting Data) ---
@@ -195,8 +196,8 @@ const dict = {
     catHelp: "자주 발생하는 장애 카테고리",
     inputPlaceholder: "장애 증상이나 기술 질문을 자유롭게 입력하세요 (이 경우만 AI 호출)...",
     rcaGen: "원인(RCA) 분석 및 조치 방안 생성 중...",
-    simRcaMsg: "🚨 **[긴급 장애 감지 및 RCA 분석 완료]**\n{title} 장애가 발생했습니다.\n\n**[Root Cause Analysis]**\n• {rootCause}\n\nCLI 트러블슈팅 실행 버튼을 클릭하여 복구를 진행하세요.",
-    cachedReply: "**[{title}]** 장애 내용에 대한 분석 및 조치 가이드입니다.\n\n**[Root Cause Analysis]**\n{rootCause}\n\n**[Resolution]**\n{resolution}\n\n상세 터미널 로그 및 자동화 스크립트는 좌측의 **[CLI 트러블슈팅 실행]** 버튼을 클릭하여 확인하세요.",
+    simRcaMsg: "🚨 **[긴급 장애 감지 및 분석 완료]**\n장애 내역: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nCLI 트러블슈팅 실행 버튼을 클릭하여 복구를 진행하세요.",
+    cachedReply: "**[{title}]** 장애 내용에 대한 분석 및 조치 가이드입니다.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\n상세 터미널 로그 및 자동화 스크립트는 좌측의 **[CLI 트러블슈팅 실행]** 버튼을 클릭하여 확인하세요.",
     cliContent: "복구 파이프라인 및 터미널 엑세스를 통해 조치를 시작합니다.\n\n\u0060\u0060\u0060bash\n{cliMock}\n\u0060\u0060\u0060\n\n{insight}",
     cacheHit: "0 토큰 (Cache Hit - 비용 0원)",
     apiHit: "{tokens} 토큰 (API 호출)",
@@ -232,8 +233,8 @@ const dict = {
     catHelp: "Frequent Incident Categories",
     inputPlaceholder: "Describe incident symptoms or tech queries freely (AI called only here)...",
     rcaGen: "Analyzing RCA & Generating Resolution...",
-    simRcaMsg: "🚨 **[Critical Incident Detected & RCA Complete]**\nIncident: {title}\n\n**[Root Cause Analysis]**\n• {rootCause}\n\nPlease click the Run CLI Troubleshooting button to proceed with recovery.",
-    cachedReply: "Here is the analysis and resolution guide for **[{title}]**.\n\n**[Root Cause Analysis]**\n{rootCause}\n\n**[Resolution]**\n{resolution}\n\nPlease check the detailed terminal logs and automation scripts by clicking the **[Run CLI Troubleshooting]** button on the left.",
+    simRcaMsg: "🚨 **[Critical Incident Detected & RCA Complete]**\nIncident: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nPlease click the Run CLI Troubleshooting button to proceed with recovery.",
+    cachedReply: "Here is the analysis and resolution guide for **[{title}]**.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\nPlease check the detailed terminal logs and automation scripts by clicking the **[Run CLI Troubleshooting]** button on the left.",
     cliContent: "Initiating recovery through the pipeline and terminal access.\n\n\u0060\u0060\u0060bash\n{cliMock}\n\u0060\u0060\u0060\n\n{insight}",
     cacheHit: "0 Tokens (Cache Hit - $0)",
     apiHit: "{tokens} Tokens (API Call)",
@@ -251,29 +252,41 @@ const dict = {
   }
 };
 
-// --- 텍스트 파싱 유틸리티 ---
+// --- 구조화된 파싱 (RCA, RES, 일반 텍스트, 코드블록 분리) ---
 const parseMessageBlocks = (text) => {
   if (!text) return [];
-  const regex = /\`\`\`(bash|sh|shell|yaml|yml|hcl)?\n([\s\S]*?)\`\`\`/g;
   const blocks = [];
+  // <RCA>, <RES>, ```bash 를 동시에 잡는 정규식
+  const regex = /(<RCA>([\s\S]*?)<\/RCA>|<RES>([\s\S]*?)<\/RES>|\`\`\`(bash|sh|shell|yaml|yml|hcl)?\n([\s\S]*?)\`\`\`)/g;
+  
   let lastIdx = 0;
   let match;
-  
+
   while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIdx) {
       blocks.push({ type: 'text', content: text.substring(lastIdx, match.index) });
     }
-    blocks.push({ type: 'cli', content: match[2] });
+
+    if (match[1].startsWith('<RCA>')) {
+      blocks.push({ type: 'rca', content: match[2].trim() });
+    } else if (match[1].startsWith('<RES>')) {
+      blocks.push({ type: 'res', content: match[3].trim() });
+    } else if (match[1].startsWith('\`\`\`')) {
+      blocks.push({ type: 'cli', content: match[5].trim() });
+    }
+
     lastIdx = match.index + match[0].length;
   }
+
   if (lastIdx < text.length) {
     blocks.push({ type: 'text', content: text.substring(lastIdx) });
   }
+
   return blocks;
 };
 
-// --- 컴포넌트: 일반 텍스트 스트리밍 ---
-const TextStream = ({ text, animate, onDone }) => {
+// --- 컴포넌트: 일반 텍스트 (스트리밍 및 자동 스크롤) ---
+const TextStream = ({ text, animate, onDone, scrollRef }) => {
   const [displayed, setDisplayed] = useState(animate ? '' : text);
   
   useEffect(() => {
@@ -281,6 +294,7 @@ const TextStream = ({ text, animate, onDone }) => {
     let i = 0;
     const timer = setInterval(() => {
       setDisplayed(text.slice(0, i));
+      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' }); // 스트리밍 중 즉각적인 자동 스크롤
       i += 3;
       if (i > text.length + 3) {
         setDisplayed(text);
@@ -289,11 +303,11 @@ const TextStream = ({ text, animate, onDone }) => {
       }
     }, 10);
     return () => clearInterval(timer);
-  }, [animate, text]);
+  }, [animate, text, scrollRef]);
 
   const formattedText = displayed
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-400 dark:text-white">$1</strong>')
-    .replace(/`(.*?)`/g, '<code class="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-200 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-600 dark:text-indigo-400">$1</strong>')
+    .replace(/`(.*?)`/g, '<code class="bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
   
   return (
     <div 
@@ -303,8 +317,72 @@ const TextStream = ({ text, animate, onDone }) => {
   );
 };
 
+// --- 컴포넌트: RCA 전용 카드 UI ---
+const RcaCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
+  const [displayed, setDisplayed] = useState(animate ? '' : text);
+  useEffect(() => {
+    if (!animate) return;
+    let i = 0;
+    const timer = setInterval(() => {
+      setDisplayed(text.slice(0, i));
+      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      i += 3;
+      if (i > text.length + 3) {
+        setDisplayed(text);
+        clearInterval(timer);
+        if (onDone) onDone();
+      }
+    }, 10);
+    return () => clearInterval(timer);
+  }, [animate, text, scrollRef]);
+
+  return (
+    <div className="bg-red-50 dark:bg-red-950/30 border-l-4 border-red-500 rounded-r-xl p-4 my-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-2 text-red-700 dark:text-red-400 font-bold text-sm uppercase tracking-wider">
+        <AlertCircle className="w-4 h-4" />
+        {lang === 'ko' ? 'Root Cause Analysis (원인 분석)' : 'Root Cause Analysis'}
+      </div>
+      <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+        {displayed}
+      </div>
+    </div>
+  );
+};
+
+// --- 컴포넌트: Resolution 전용 카드 UI ---
+const ResCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
+  const [displayed, setDisplayed] = useState(animate ? '' : text);
+  useEffect(() => {
+    if (!animate) return;
+    let i = 0;
+    const timer = setInterval(() => {
+      setDisplayed(text.slice(0, i));
+      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      i += 3;
+      if (i > text.length + 3) {
+        setDisplayed(text);
+        clearInterval(timer);
+        if (onDone) onDone();
+      }
+    }, 10);
+    return () => clearInterval(timer);
+  }, [animate, text, scrollRef]);
+
+  return (
+    <div className="bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-emerald-500 rounded-r-xl p-4 my-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-2 text-emerald-700 dark:text-emerald-400 font-bold text-sm uppercase tracking-wider">
+        <CheckCircle className="w-4 h-4" />
+        {lang === 'ko' ? 'Resolution (조치 방안)' : 'Resolution'}
+      </div>
+      <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+        {displayed}
+      </div>
+    </div>
+  );
+};
+
 // --- 컴포넌트: CLI 터미널 스트리밍 ---
-const CLIStream = ({ code, animate, onDone }) => {
+const CLIStream = ({ code, animate, onDone, scrollRef }) => {
   const lines = code.trim().split('\n');
   const [visibleLines, setVisibleLines] = useState(animate ? [] : lines);
   
@@ -313,14 +391,15 @@ const CLIStream = ({ code, animate, onDone }) => {
     let i = 0;
     const timer = setInterval(() => {
       setVisibleLines(lines.slice(0, i + 1));
+      scrollRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
       i++;
       if (i >= lines.length) {
         clearInterval(timer);
         setTimeout(() => { if (onDone) onDone() }, 500); 
       }
-    }, 400); 
+    }, 300); 
     return () => clearInterval(timer);
-  }, [animate, code]);
+  }, [animate, code, scrollRef]);
 
   const renderLine = (l) => {
     if (l.startsWith('[ERROR]')) return <span className="text-red-400 font-bold">{l}</span>;
@@ -358,8 +437,17 @@ const CLIStream = ({ code, animate, onDone }) => {
 export default function App() {
   const [lang, setLang] = useState('ko');
   const [theme, setTheme] = useState('dark');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // 모바일 사이드바 토글 상태
   
-  // 브라우저 LocalStorage 캐싱 적용 (새로고침 유지)
+  // 리액트 표준 다크 모드 토글 (html 클래스 주입 방식) - 가장 완벽한 형태
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+  
   const [messages, setMessages] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('chat_history');
@@ -368,14 +456,12 @@ export default function App() {
     return [];
   });
   
-  // 최초 로드 시 메시지가 없으면 초기화 (동적 렌더링을 위해 객체 플래그 사용)
   useEffect(() => {
     if (messages.length === 0) {
       setMessages([{ role: 'assistant', type: 'INIT', isNew: false }]);
     }
   }, []);
 
-  // 메시지 업데이트 시 LocalStorage 자동 저장
   useEffect(() => {
     if (messages.length > 0) {
       localStorage.setItem('chat_history', JSON.stringify(messages));
@@ -391,21 +477,18 @@ export default function App() {
   const [activeCLIAction, setActiveCLIAction] = useState(null); 
   const [tokens, setTokens] = useState({ input: 0, output: 0, total: 0, latest: 'None' });
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  
   const messagesEndRef = useRef(null);
   
   const t = dict[lang];
 
-  // 카테고리 매핑 로직 완벽 수정 (번역된 이름을 기준으로 그룹핑하여 중복 제거)
+  // 카테고리 통계 (번역본 기준 병합)
   const categoryCounts = kbData[lang].reduce((acc, curr) => {
     const localizedCatName = t.categories[curr.category] || curr.category;
     acc[localizedCatName] = (acc[localizedCatName] || 0) + 1;
     return acc;
   }, {});
   const maxCategoryCount = Math.max(...Object.values(categoryCounts));
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading]);
 
   const fetchGemini = async (payload) => {
     const apiKey = "";
@@ -432,7 +515,6 @@ export default function App() {
   };
 
   const handleCategoryClick = (localizedCatName) => {
-    // 번역된 이름으로 원본 카테고리에 속한 이슈 찾기
     const issues = kbData[lang].filter(item => {
       const catName = t.categories[item.category] || item.category;
       return catName === localizedCatName;
@@ -447,9 +529,9 @@ export default function App() {
     setTokens(prev => ({ ...prev, latest: t.cacheHit }));
 
     setTimeout(() => {
-      // 언어 변환 시 실시간 렌더링을 위해 string 대신 type 지정
       setMessages(prev => [...prev, { role: 'assistant', type: 'CACHED_RCA', caseId: item.id, isNew: true }]);
       setActiveCLIAction(item.id);
+      setIsMobileMenuOpen(false); // 모바일 메뉴 자동 닫기
     }, 400);
   };
 
@@ -462,20 +544,17 @@ export default function App() {
 
     const context = retrieveContext(userText);
     
-    // 시니어 엔지니어 역량 검증 프롬프트 (강화)
     const systemInstruction = `당신은 15년 이상의 경력을 가진 최상급 클라우드 시니어 엔지니어(AI 에이전트)입니다.
 [지침]:
-1. **기술적 검증 필수:** 답변을 생성하기 전, 속으로(내부적으로) 아키텍처 원리와 장애 해결책이 기술적으로 100% 정확한지 면밀하게 교차 검증하세요. 검증되지 않은 위험한 명령어 제안은 절대 금지합니다.
-2. 현재 사용자의 언어 설정(${lang === 'ko' ? '한국어' : 'English'})에 완벽하게 맞추어 전문적이고 신뢰감 있는 톤으로 답변하세요.
-3. 질문이 아래 [Knowledge Base]와 관련 있다면 이를 최우선으로 반영하세요.
-4. **절대로 마크다운 코드 블록(bash 등)이나 스크립트, 터미널 로그를 직접 출력하지 마세요.** (UI 일관성을 위함)
-5. 원인(RCA)과 조치 방안(Resolution)만 텍스트로 친절하고 논리적으로 요약 설명하고, 답변 마지막에는 반드시 "상세 터미널 로그 및 복구 스크립트는 좌측의 **[${t.cliRun}]** 버튼을 클릭하여 확인하세요." 라고 안내하세요.
-6. [Knowledge Base]에 없는 내용이라면 15년 차 시니어 엔지니어의 깊이 있는 Best Practice를 제공하되, 위 제약사항을 동일하게 준수하세요.
+1. **기술적 검증 필수:** 답변을 생성하기 전, 아키텍처 원리와 장애 해결책이 기술적으로 100% 정확한지 교차 검증하세요.
+2. 현재 언어 설정(${lang === 'ko' ? '한국어' : 'English'})에 맞추어 전문적인 톤으로 답변하세요.
+3. **절대로 마크다운 코드 블록(bash 등)이나 터미널 로그를 직접 출력하지 마세요.**
+4. 원인(RCA)은 반드시 <RCA>여기에 원인 설명 작성</RCA> 태그로 감싸고, 조치 방안(Resolution)은 반드시 <RES>여기에 조치 방안 작성</RES> 태그로 감싸서 출력하세요. 그래야 UI에서 예쁜 카드로 렌더링됩니다.
+5. 답변 마지막에는 항상 "상세 터미널 로그 및 복구 스크립트는 좌측의 **[${t.cliRun}]** 버튼을 클릭하여 확인하세요." 라고 안내하세요.
 
 [Knowledge Base]:
 ${context}`;
 
-    // 시스템 메시지는 AI 인식용이 아니므로 제외
     const contents = messages
       .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
       .map(m => ({
@@ -515,6 +594,7 @@ ${context}`;
   const triggerSelectedSimulation = () => {
     if (isSimulating) return;
     setIsSimulating(true);
+    setIsMobileMenuOpen(false); // 모바일 메뉴 자동 닫기
     
     const randomIdx = Math.floor(Math.random() * kbData[lang].length);
     const targetCase = kbData[lang][randomIdx];
@@ -543,9 +623,8 @@ ${context}`;
     setIsSimulating(false);
   };
 
-  // --- 다국어 동적 렌더링 로직 ---
   const getDynamicContent = (msg) => {
-    if (msg.content) return msg.content; // 일반 대화
+    if (msg.content) return msg.content; 
     
     if (msg.type === 'INIT') return t.initMsg;
     
@@ -564,17 +643,23 @@ ${context}`;
     return "";
   };
 
-  const SequenceRenderer = ({ blocks, isNew }) => {
+  const SequenceRenderer = ({ blocks, isNew, lang }) => {
     const [currentIndex, setCurrentIndex] = useState(isNew ? 0 : blocks.length);
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         {blocks.map((block, idx) => {
           if (idx > currentIndex) return null;
           if (block.type === 'text') {
-            return <TextStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} />;
+            return <TextStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} />;
+          }
+          if (block.type === 'rca') {
+            return <RcaCardStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} lang={lang} />;
+          }
+          if (block.type === 'res') {
+            return <ResCardStream key={idx} text={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} lang={lang} />;
           }
           if (block.type === 'cli') {
-            return <CLIStream key={idx} code={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} />;
+            return <CLIStream key={idx} code={block.content} animate={isNew && idx === currentIndex} onDone={() => setCurrentIndex(i => i + 1)} scrollRef={messagesEndRef} />;
           }
           return null;
         })}
@@ -583,7 +668,7 @@ ${context}`;
   };
 
   return (
-    <div className={`${theme} h-screen flex flex-col md:flex-row font-sans overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300`}>
+    <div className="h-screen flex flex-col md:flex-row font-sans overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300">
       
       {/* Toast Notifications */}
       <div className="absolute top-4 right-4 z-50 space-y-3 pointer-events-none">
@@ -595,8 +680,16 @@ ${context}`;
         ))}
       </div>
 
-      {/* Sidebar */}
-      <aside className="w-full md:w-80 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 z-10 relative transition-colors duration-300">
+      {/* Mobile Overlay Background */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden transition-opacity" 
+          onClick={() => setIsMobileMenuOpen(false)} 
+        />
+      )}
+
+      {/* Sidebar (Responsive Slide-in) */}
+      <aside className={`fixed inset-y-0 left-0 z-50 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0`}>
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
@@ -607,9 +700,13 @@ ${context}`;
               <span className="text-[11px] text-indigo-500 dark:text-indigo-400 font-mono tracking-widest">{t.subtitle}</span>
             </div>
           </div>
+          {/* 모바일에서 사이드바 닫기 버튼 */}
+          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white">
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30">
           <button 
             onClick={triggerSelectedSimulation}
             disabled={isSimulating}
@@ -621,8 +718,7 @@ ${context}`;
 
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
           
-          {/* KB 장애 통계 차트 */}
-          <div className="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
+          <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
             <h3 className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5 font-bold">
               <BarChart3 className="w-3.5 h-3.5" /> {t.statsTitle}
             </h3>
@@ -645,7 +741,7 @@ ${context}`;
           <h2 className="text-[11px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Cpu className="w-4 h-4" /> FinOps Token Monitor
           </h2>
-          <div className="bg-slate-50 dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
+          <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
             <div className="text-center mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50">
               <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest block mb-1 font-bold">{t.totalUsage}</span>
               <span className="text-3xl font-light text-slate-900 dark:text-white">{tokens.total.toLocaleString()}</span>
@@ -662,13 +758,13 @@ ${context}`;
           </div>
 
           {activeCLIAction && (
-            <div className="mt-auto pt-4 animate-in slide-in-from-bottom-5">
+            <div className="mt-auto pt-4 animate-in slide-in-from-bottom-5 hidden md:block">
               <h2 className="text-[10px] font-bold text-green-600 dark:text-green-500 uppercase tracking-widest mb-2 text-center">{t.actionReq}</h2>
               <button
                 onClick={() => handleCLIAction(activeCLIAction)}
                 className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 px-4 rounded-xl flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all border border-green-400 animate-pulse"
               >
-                <PlayCircle className="w-5 h-5" /> {t.cliRun}
+                <Zap className="w-5 h-5 fill-current" /> {t.cliRun}
               </button>
             </div>
           )}
@@ -676,41 +772,45 @@ ${context}`;
       </aside>
 
       {/* Main UI Area */}
-      <main className="flex-1 flex flex-col h-full relative">
-        <header className="h-14 bg-white/80 dark:bg-slate-900/50 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-end items-center px-6 z-20 shrink-0 gap-4 transition-colors duration-300">
+      <main className="flex-1 flex flex-col h-full relative bg-slate-50 dark:bg-[#0B1120]">
+        <header className="h-14 bg-white/80 dark:bg-[#0B1120]/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-between md:justify-end items-center px-4 md:px-6 z-20 shrink-0 gap-4 transition-colors duration-300">
            
-           {/* Theme Toggle */}
-           <button onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors">
-             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+           {/* Mobile Menu Toggle */}
+           <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white">
+             <Menu className="w-6 h-6" />
            </button>
 
-           {/* Language Toggle */}
-           <button onClick={() => setLang(prev => prev === 'ko' ? 'en' : 'ko')} className="flex items-center gap-1 text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors">
-             <Globe className="w-5 h-5" />
-             <span className="text-xs font-bold uppercase">{lang}</span>
-           </button>
+           <div className="flex items-center gap-4">
+             <button onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors">
+               {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+             </button>
 
-           {/* Notifications */}
-           <div className="relative cursor-pointer" onClick={() => setIsNotifOpen(!isNotifOpen)}>
-             <BellRing className={`w-5 h-5 transition-colors ${isNotifOpen ? 'text-indigo-600 dark:text-white' : 'text-slate-400 hover:text-indigo-500 dark:hover:text-white'}`} />
-             {activeIncidents.length > 0 && (
-               <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                 <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-white dark:border-slate-900"></span>
-               </span>
-             )}
-             
-             <div className={`absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl transition-all duration-200 p-2 ${isNotifOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
-                <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 px-2 pt-1 uppercase">{t.ongoingTitle}</h3>
-                {activeIncidents.length === 0 ? (
-                  <div className="p-3 text-sm text-slate-500 text-center font-medium">{t.noOngoing}</div>
-                ) : activeIncidents.map(inc => (
-                  <div key={inc.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg mb-2 last:mb-0">
-                    <p className="text-xs text-slate-700 dark:text-slate-300 flex items-center gap-2 leading-relaxed font-bold">
-                      {inc.icon} {inc.msg}
-                    </p>
-                  </div>
-                ))}
+             <button onClick={() => setLang(prev => prev === 'ko' ? 'en' : 'ko')} className="flex items-center gap-1 text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors">
+               <Globe className="w-5 h-5" />
+               <span className="text-xs font-bold uppercase">{lang}</span>
+             </button>
+
+             <div className="relative cursor-pointer" onClick={() => setIsNotifOpen(!isNotifOpen)}>
+               <BellRing className={`w-5 h-5 transition-colors ${isNotifOpen ? 'text-indigo-600 dark:text-white' : 'text-slate-400 hover:text-indigo-500 dark:hover:text-white'}`} />
+               {activeIncidents.length > 0 && (
+                 <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                   <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-white dark:border-slate-900"></span>
+                 </span>
+               )}
+               
+               <div className={`absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl transition-all duration-200 p-2 ${isNotifOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 px-2 pt-1 uppercase">{t.ongoingTitle}</h3>
+                  {activeIncidents.length === 0 ? (
+                    <div className="p-3 text-sm text-slate-500 text-center font-medium">{t.noOngoing}</div>
+                  ) : activeIncidents.map(inc => (
+                    <div key={inc.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg mb-2 last:mb-0">
+                      <p className="text-xs text-slate-700 dark:text-slate-300 flex items-center gap-2 leading-relaxed font-bold">
+                        {inc.icon} {inc.msg}
+                      </p>
+                    </div>
+                  ))}
+               </div>
              </div>
            </div>
         </header>
@@ -722,7 +822,6 @@ ${context}`;
               const isUser = msg.role === 'user';
               const isSystem = msg.role === 'system';
               
-              // 동적 렌더링 문자열 추출
               const dynamicContent = getDynamicContent(msg);
               const blocks = parseMessageBlocks(dynamicContent);
 
@@ -733,11 +832,11 @@ ${context}`;
                     ${isUser 
                       ? 'bg-indigo-600 text-white rounded-tr-none' 
                       : isSystem 
-                        ? (theme === 'dark' ? 'bg-slate-900 border-2 border-red-500/30 text-slate-200 rounded-tl-none shadow-[0_0_20px_rgba(239,68,68,0.1)]' : 'bg-red-50 border-2 border-red-500/30 text-slate-800 rounded-tl-none shadow-[0_0_20px_rgba(239,68,68,0.1)]')
-                        : (theme === 'dark' ? 'bg-slate-800 border border-slate-700 text-slate-200 rounded-tl-none shadow-lg' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none shadow-lg')
+                        ? 'bg-red-50 dark:bg-slate-900 border-2 border-red-500/30 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-[0_0_20px_rgba(239,68,68,0.1)]'
+                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-none shadow-lg'
                     }
                   `}>
-                    <div className={`flex items-center gap-2 mb-3 border-b pb-2 ${isUser ? 'opacity-80 border-white/20' : (theme === 'dark' ? 'opacity-60 border-slate-600' : 'opacity-60 border-slate-300')}`}>
+                    <div className={`flex items-center gap-2 mb-3 border-b pb-2 ${isUser ? 'opacity-80 border-white/20' : 'opacity-60 border-slate-300 dark:border-slate-600'}`}>
                       {isUser ? <Smartphone className="w-4 h-4" /> : isSystem ? <ShieldAlert className="w-4 h-4 text-red-500 dark:text-red-400" /> : <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
                       <span className="text-xs font-bold uppercase tracking-wider">
                         {isUser ? t.you : isSystem ? t.sysAnal : t.agent}
@@ -748,7 +847,7 @@ ${context}`;
                       {isUser ? (
                         <div className="whitespace-pre-wrap">{dynamicContent}</div>
                       ) : (
-                        <SequenceRenderer blocks={blocks} isNew={msg.isNew} />
+                        <SequenceRenderer blocks={blocks} isNew={msg.isNew} lang={lang} />
                       )}
                     </div>
                   </div>
@@ -758,20 +857,34 @@ ${context}`;
 
             {isLoading && (
               <div className="flex justify-start">
-                <div className={`border rounded-2xl rounded-tl-none p-5 flex items-center gap-4 shadow-lg ${theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-800'}`}>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-2xl rounded-tl-none p-5 flex items-center gap-4 shadow-lg">
                   <Loader2 className="w-5 h-5 animate-spin text-indigo-600 dark:text-indigo-400" />
                   <span className="text-sm font-bold animate-pulse">{t.rcaGen}</span>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
+            
+            {/* 모바일 화면용 여백 (FAB에 가려지는 것 방지) */}
+            {activeCLIAction && <div className="h-16 md:hidden"></div>}
           </div>
         </div>
 
+        {/* --- 모바일 전용 플로팅 액션 버튼 (FAB) --- */}
+        {activeCLIAction && (
+          <div className="md:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 w-[90%] animate-in slide-in-from-bottom-5">
+            <button
+              onClick={() => handleCLIAction(activeCLIAction)}
+              className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3.5 px-4 rounded-full flex items-center justify-center gap-2 shadow-[0_10px_25px_rgba(34,197,94,0.4)] transition-all border border-green-400 animate-bounce"
+            >
+              <Zap className="w-5 h-5 fill-current" /> {t.cliRun}
+            </button>
+          </div>
+        )}
+
         {/* --- 항시 고정된 하단 영역 (버튼 메뉴 + 입력창) --- */}
-        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 flex flex-col pb-safe shrink-0 transition-colors duration-300">
+        <div className="bg-white/90 dark:bg-[#0B1120]/90 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 flex flex-col pb-safe shrink-0 transition-colors duration-300 relative z-30">
           
-          {/* 이슈 문의 카테고리 예시 버튼 */}
           <div className="max-w-4xl mx-auto w-full px-4 pt-4">
             <div className="text-xs text-slate-500 font-bold mb-2 flex items-center gap-1.5">
               <HelpCircle className="w-3.5 h-3.5" /> {t.catHelp}
@@ -792,7 +905,6 @@ ${context}`;
             </div>
           </div>
 
-          {/* 질문 직접 입력창 (API 호출용) */}
           <div className="max-w-4xl mx-auto w-full p-4 pt-2">
             <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(input); }} className="relative flex items-center">
               <input
@@ -800,7 +912,7 @@ ${context}`;
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={t.inputPlaceholder}
-                className="w-full bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-medium rounded-full pl-6 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
+                className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-medium rounded-full pl-6 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
                 disabled={isLoading}
               />
               <button
