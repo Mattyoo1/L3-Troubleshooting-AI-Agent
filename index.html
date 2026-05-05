@@ -2,15 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- 모바일 상태바 다크 테마 일치 (선택사항) -->
+    <meta name="theme-color" content="#0B1120" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0B1120" />
-    <title>l3-agent</title>
+    <title>Infra agent</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(reg => {
+            console.log('Service worker registered!', reg);
+          }).catch(err => {
+            console.log('Service worker registration failed:', err);
+          });
+        });
+      }
+    </script>
+    
   </body>
 </html>
