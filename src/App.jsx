@@ -666,7 +666,7 @@ export default function App() {
   const [theme, setTheme] = useState('dark');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // 💡 API Key 상태 및 저장 확인 상태
+  // API Key 상태 및 저장 확인 상태
   const [geminiKey, setGeminiKey] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('gemini_api_key') || '';
@@ -784,7 +784,6 @@ export default function App() {
   const maxCategoryCount = Math.max(...Object.values(categoryCounts));
 
   const fetchGemini = async (payload) => {
-    // 💡 수정: UI 입력 키를 최우선으로 사용, 없을 시 환경 변수 참조
     let apiKey = geminiKey.trim();
     try {
       if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
@@ -794,10 +793,9 @@ export default function App() {
       // ignore
     }
     
-    if (!apiKey) throw new Error("좌측 사이드바에 Gemini API Key를 입력해주세요.");
+    if (!apiKey) throw new Error("API Key가 설정되지 않았습니다. 좌측 메뉴에서 API Key를 입력 후 저장해주세요.");
 
-    // 💡 수정: 외부 Vercel에서 404 에러가 나지 않도록 범용 퍼블릭 모델인 gemini-2.0-flash 로 변경
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -863,11 +861,10 @@ export default function App() {
   const handleSendMessage = async (userText) => {
     if (!userText.trim() || isLoading) return;
 
-    // 💡 추가: 메시지 전송 전 API Key 누락 방지 로직
     let hasKey = geminiKey.trim() !== "";
-    try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
+    try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
     if (!hasKey) {
-      alert("⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력해주세요! (입력하신 키는 본인 브라우저에만 안전하게 자동 저장됩니다)");
+      alert("⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!");
       return;
     }
 
@@ -1079,8 +1076,8 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
           
           {/* API Key Input Section */}
-          <div className="mb-6 bg-indigo-950/30 border border-indigo-500/20 p-4 rounded-xl">
-             <h2 className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
+          <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
+             <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                 <Key className="w-3.5 h-3.5" /> Gemini API 설정
              </h2>
              {!isKeySaved ? (
@@ -1100,8 +1097,8 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                  </button>
                </div>
              ) : (
-               <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 px-3 py-2.5 rounded-lg">
-                 <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+               <div className="flex items-center justify-between bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg">
+                 <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
                    <CheckCircle className="w-4 h-4" /> API Key 연동 완료
                  </span>
                  <button
@@ -1332,6 +1329,13 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
       </main>
 
       <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #cbd5e1 transparent;
+        }
+        .dark .custom-scrollbar {
+          scrollbar-color: #334155 transparent;
+        }
         .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
