@@ -215,7 +215,14 @@ const dict = {
       "Database / Disaster Recovery": "DB 장애",
       "DevOps / Tooling": "DevOps 장애",
       "Middleware / Web-WAS": "웹/미들웨어 장애"
-    }
+    },
+    apiSettingTitle: "Gemini API 설정",
+    apiKeyPlaceholder: "API Key 입력...",
+    saveBtn: "저장",
+    apiKeyLinked: "API Key 연동 완료",
+    resetBtn: "키 재설정",
+    apiKeyMissingError: "API Key가 설정되지 않았습니다. 좌측 메뉴에서 API Key를 입력 후 저장해주세요.",
+    apiKeyMissingAlert: "⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!"
   },
   en: {
     title: "Infra Troubleshooting",
@@ -257,7 +264,14 @@ const dict = {
       "Database / Disaster Recovery": "DB Issue",
       "DevOps / Tooling": "DevOps Issue",
       "Middleware / Web-WAS": "Web/Middleware"
-    }
+    },
+    apiSettingTitle: "Gemini API Settings",
+    apiKeyPlaceholder: "Enter API Key...",
+    saveBtn: "Save",
+    apiKeyLinked: "API Key Linked",
+    resetBtn: "Reset Key",
+    apiKeyMissingError: "API Key is not set. Please enter and save your API Key in the left menu.",
+    apiKeyMissingAlert: "⚠️ Please enter and save your Gemini API Key in the left sidebar first!"
   }
 };
 
@@ -793,7 +807,7 @@ export default function App() {
       // ignore
     }
     
-    if (!apiKey) throw new Error("API Key가 설정되지 않았습니다. 좌측 메뉴에서 API Key를 입력 후 저장해주세요.");
+    if (!apiKey) throw new Error(t.apiKeyMissingError);
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -864,7 +878,7 @@ export default function App() {
     let hasKey = geminiKey.trim() !== "";
     try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
     if (!hasKey) {
-      alert("⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!");
+      alert(t.apiKeyMissingAlert);
       return;
     }
 
@@ -1078,7 +1092,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
           {/* API Key Input Section */}
           <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
              <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <Key className="w-3.5 h-3.5" /> Gemini API 설정
+                <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
              </h2>
              {!isKeySaved ? (
                <div className="flex gap-2">
@@ -1086,26 +1100,26 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                     type="password"
                     value={geminiKey}
                     onChange={handleKeyChange}
-                    placeholder="API Key 입력..."
+                    placeholder={t.apiKeyPlaceholder}
                     className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 shadow-sm transition-all"
                  />
                  <button
                     onClick={handleSaveKey}
                     className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500"
                  >
-                   저장
+                   {t.saveBtn}
                  </button>
                </div>
              ) : (
                <div className="flex items-center justify-between bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg">
                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                   <CheckCircle className="w-4 h-4" /> API Key 연동 완료
+                   <CheckCircle className="w-4 h-4" /> {t.apiKeyLinked}
                  </span>
                  <button
                    onClick={handleResetKey}
                    className="text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white underline underline-offset-2 transition-colors"
                  >
-                   키 재설정
+                   {t.resetBtn}
                  </button>
                </div>
              )}
