@@ -3,7 +3,7 @@ import {
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle, 
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity, 
   HelpCircle, Loader2, Send, BarChart3, Globe, Sun, Moon,
-  Menu, X, CheckCircle, Zap, Calendar, CalendarDays, Key
+  Menu, X, CheckCircle, Zap, Calendar, CalendarDays, Key, Trash2
 } from 'lucide-react';
 
 // --- 사내 지식 베이스 (Troubleshooting Data) ---
@@ -44,7 +44,7 @@ const kbData = {
     {
       id: "TS-NCP-005", category: "Cloud / IaC",
       title: "NCP Terraform VM Provisioning 실패 및 동적 데이터 소스 리팩토링",
-      rootCause: "OS 이미지 및 스펙에 하드코딩된 정적 상품 코드를 사용하여 드리프트 발생. NCP API가 'terraform apply' 중 사용되지 않는 이미지 코드를 거부함.",
+      rootCause: "OS 이미지 및 스펙에 하드코딩된 정적 상품 코드를 사용하여 드리프트 발생. NCP API가 'terraform apply' 중 사용되지 참조되는 이미지 코드를 거부함.",
       resolution: "정규식을 사용하여 런타임에 가장 최신의 호환 가능한 스펙 코드를 동적으로 가져오는 'data' 소스 방식으로 리팩토링.",
       cliMock: "[ERROR] ncloud_server: Bad Request: InvalidServerImageProductCode\n$ vi server.tf\n[INFO] Changing hardcoded 'SVR0000000X' to dynamic data.ncloud_server_image.ubuntu24.id\n$ terraform plan\n[INFO] Plan: 2 to add, 0 to change, 0 to destroy.\n$ terraform apply -auto-approve\n[SUCCESS] VM Provisioned completely with idempotent infrastructure code.",
       insight: "**[Terraform 리팩토링 코드 팁 (server.tf)]**\n\u0060\u0060\u0060hcl\ndata \"ncloud_server_image\" \"ubuntu\" {\n  filter {\n    name   = \"product_name\"\n    values = [\"ubuntu-24.04\"]\n    regex  = true\n  }\n}\n\u0060\u0060\u0060\n클라우드 벤더의 API 코드는 수시로 변하므로, 항상 \u0060data\u0060 블록을 이용해 런타임에 최신 코드를 쿼리하는 것이 IaC의 핵심입니다."
@@ -222,7 +222,8 @@ const dict = {
     apiKeyLinked: "API Key 연동 완료",
     resetBtn: "키 재설정",
     apiKeyMissingError: "API Key가 설정되지 않았습니다. 좌측 메뉴에서 API Key를 입력 후 저장해주세요.",
-    apiKeyMissingAlert: "⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!"
+    apiKeyMissingAlert: "⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!",
+    clearChat: "대화 초기화"
   },
   en: {
     title: "Infra Troubleshooting",
@@ -271,7 +272,8 @@ const dict = {
     apiKeyLinked: "API Key Linked",
     resetBtn: "Reset Key",
     apiKeyMissingError: "API Key is not set. Please enter and save your API Key in the left menu.",
-    apiKeyMissingAlert: "⚠️ Please enter and save your Gemini API Key in the left sidebar first!"
+    apiKeyMissingAlert: "⚠️ Please enter and save your Gemini API Key in the left sidebar first!",
+    clearChat: "Clear Chat"
   }
 };
 
@@ -563,7 +565,7 @@ const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete })
   );
 };
 
-// 💡 새로운 컴포넌트: 토큰 사용량 동적 막대그래프
+// 토큰 사용량 동적 막대그래프
 const TokenTrendChart = ({ history, lang, currentTokens }) => {
   const [chartView, setChartView] = useState('daily'); // 'daily' | 'monthly'
   const t = dict[lang];
@@ -750,7 +752,7 @@ export default function App() {
     }
   }, [messages]);
 
-  // 💡 로컬 스토리지에 날짜별 토큰 사용량 저장 상태 추가
+  // 로컬 스토리지에 날짜별 토큰 사용량 저장 상태 추가
   const [tokenHistory, setTokenHistory] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('token_history');
@@ -1010,6 +1012,12 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     setIsSimulating(false);
   };
 
+  // --- 대화 초기화(Clear) 핸들러 ---
+  const handleClearChat = () => {
+    setMessages([{ id: Date.now().toString() + "-init", role: 'assistant', type: 'INIT', isNew: false }]);
+    setActiveCLIAction(null);
+  };
+
   const getDynamicContent = (msg, currentLang) => {
     if (msg.type === 'CUSTOM_CHAT') {
       return msg.content[currentLang] || msg.content[msg.originalLang] || "";
@@ -1165,7 +1173,6 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                {getLatestTokenStr()}
             </div>
             
-            {/* 💡 새로운 토큰 사용량 차트 연동 */}
             <TokenTrendChart history={tokenHistory} lang={lang} currentTokens={tokens.total} />
 
           </div>
@@ -1193,6 +1200,15 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
            </button>
 
            <div className="flex items-center gap-4">
+             {/* 대화 초기화 버튼 추가 */}
+             <button 
+               onClick={handleClearChat}
+               title={t.clearChat}
+               className="flex items-center gap-1.5 text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors"
+             >
+               <Trash2 className="w-5 h-5" />
+             </button>
+
              <button onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors">
                {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
              </button>
