@@ -17,6 +17,6 @@
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#0B1120",
-  "background_color": "#ffffff"
+  "background_color": "##0B1120"
 }
 (*추가로 `index.html`의 `<head>` 태그 안에 `<link rel="manifest" href="/manifest.json" />` 한 줄을 꼭 넣어주세요!*)
