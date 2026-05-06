@@ -185,6 +185,8 @@ const dict = {
     totalUsage: "총 사용량",
     inputLabel: "입력",
     outputLabel: "출력",
+    transKoLabel: "한글 (EN ➔ KO)",
+    transEnLabel: "영어 (KO ➔ EN)",
     lastLabel: "Last:",
     actionReq: "Action Required",
     cliRun: "CLI 트러블슈팅 실행",
@@ -194,7 +196,7 @@ const dict = {
     agent: "AI Agent",
     you: "You",
     catHelp: "자주 발생하는 장애 카테고리",
-    inputPlaceholder: "장애 증상이나 기술 질문을 자유롭게 입력하세요 (이 경우만 AI 호출)...",
+    inputPlaceholder: "장애 증상이나 기술 질문을 자유롭게 입력하세요...",
     rcaGen: "원인(RCA) 분석 및 조치 방안 생성 중...",
     simRcaMsg: "🚨 **[긴급 장애 감지 및 분석 완료]**\n장애 내역: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nCLI 트러블슈팅 실행 버튼을 클릭하여 복구를 진행하세요.",
     cachedReply: "**[{title}]** 장애 내용에 대한 분석 및 조치 가이드입니다.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\n상세 터미널 로그 및 자동화 스크립트는 좌측의 **[CLI 트러블슈팅 실행]** 버튼을 클릭하여 확인하세요.",
@@ -223,7 +225,10 @@ const dict = {
     resetBtn: "키 재설정",
     apiKeyMissingError: "API Key가 설정되지 않았습니다. 좌측 메뉴에서 API Key를 입력 후 저장해주세요.",
     apiKeyMissingAlert: "⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!",
-    clearChat: "대화 초기화"
+    clearChat: "대화 초기화",
+    speechNotSupported: "이 브라우저는 음성 인식을 지원하지 않습니다.",
+    voiceMuteToggle: "음성 출력 토글",
+    listening: "듣고 있습니다..."
   },
   en: {
     title: "My IT Agent",
@@ -235,6 +240,8 @@ const dict = {
     totalUsage: "Total Usage",
     inputLabel: "Input",
     outputLabel: "Output",
+    transKoLabel: "Korean (EN ➔ KO)",
+    transEnLabel: "English (KO ➔ EN)",
     lastLabel: "Last:",
     actionReq: "Action Required",
     cliRun: "Run CLI Troubleshooting",
@@ -244,7 +251,7 @@ const dict = {
     agent: "AI Agent",
     you: "You",
     catHelp: "Frequent Incident Categories",
-    inputPlaceholder: "Describe incident symptoms or tech queries freely (AI called only here)...",
+    inputPlaceholder: "Describe incident symptoms or tech queries freely...",
     rcaGen: "Analyzing RCA & Generating Resolution...",
     simRcaMsg: "🚨 **[Critical Incident Detected & RCA Complete]**\nIncident: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nPlease click the Run CLI Troubleshooting button to proceed with recovery.",
     cachedReply: "Here is the analysis and resolution guide for **[{title}]**.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\nPlease check the detailed terminal logs and automation scripts by clicking the **[Run CLI Troubleshooting]** button on the left.",
@@ -273,7 +280,10 @@ const dict = {
     resetBtn: "Reset Key",
     apiKeyMissingError: "API Key is not set. Please enter and save your API Key in the left menu.",
     apiKeyMissingAlert: "⚠️ Please enter and save your Gemini API Key in the left sidebar first!",
-    clearChat: "Clear Chat"
+    clearChat: "Clear Chat",
+    speechNotSupported: "This browser does not support speech recognition.",
+    voiceMuteToggle: "Toggle Voice Output",
+    listening: "Listening..."
   }
 };
 
@@ -312,6 +322,21 @@ const parseMessageBlocks = (text) => {
   return blocks;
 };
 
+// 🛡️ [CRITICAL #2 해결] dangerouslySetInnerHTML을 완벽히 제거한 자체 렌더링 파서
+const renderFormattedText = (text) => {
+  if (!text) return null;
+  const parts = text.split(/(\*\*.*?\*\*|`.*?`)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index} className="text-indigo-600 dark:text-indigo-400">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={index} className="bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-sm font-mono">{part.slice(1, -1)}</code>;
+    }
+    return <span key={index}>{part}</span>;
+  });
+};
+
 const TextStream = ({ text, animate, onDone, scrollRef }) => {
   const [displayed, setDisplayed] = useState(animate ? '' : text);
   const finishedRef = useRef(!animate);
@@ -337,15 +362,11 @@ const TextStream = ({ text, animate, onDone, scrollRef }) => {
     return () => clearInterval(timer);
   }, [animate, text, onDone, scrollRef]);
 
-  const formattedText = displayed
-    .replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-600 dark:text-indigo-400">$1</strong>')
-    .replace(/`(.*?)`/g, '<code class="bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
-  
+  // 🛡️ XSS 방어 적용 렌더링
   return (
-    <div 
-      className="mb-3 leading-relaxed whitespace-pre-wrap text-slate-800 dark:text-slate-200"
-      dangerouslySetInnerHTML={{ __html: formattedText }} 
-    />
+    <div className="mb-3 leading-relaxed whitespace-pre-wrap text-slate-800 dark:text-slate-200">
+      {renderFormattedText(displayed)}
+    </div>
   );
 };
 
@@ -381,7 +402,7 @@ const RcaCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
         {lang === 'ko' ? 'Root Cause Analysis (원인 분석)' : 'Root Cause Analysis'}
       </div>
       <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-        {displayed}
+        {renderFormattedText(displayed)}
       </div>
     </div>
   );
@@ -419,7 +440,7 @@ const ResCardStream = ({ text, animate, onDone, scrollRef, lang }) => {
         {lang === 'ko' ? 'Resolution (조치 방안)' : 'Resolution'}
       </div>
       <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-        {displayed}
+        {renderFormattedText(displayed)}
       </div>
     </div>
   );
@@ -565,24 +586,20 @@ const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete })
   );
 };
 
-// 토큰 사용량 동적 막대그래프
 const TokenTrendChart = ({ history, lang, currentTokens }) => {
-  const [chartView, setChartView] = useState('daily'); // 'daily' | 'monthly'
+  const [chartView, setChartView] = useState('daily'); 
   const t = dict[lang];
 
-  // 그래프 데이터를 생성하는 함수
   const getChartData = () => {
     const data = [];
     const today = new Date();
 
     if (chartView === 'daily') {
-      // 최근 7일 (Daily)
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
         const dateStr = d.toISOString().split('T')[0];
         
-        // 오늘 날짜인 경우 현재 세션의 토큰양을 합산하여 실시간 반영
         let val = history[dateStr] || 0;
         if (i === 0 && currentTokens > 0) val += currentTokens;
 
@@ -593,7 +610,6 @@ const TokenTrendChart = ({ history, lang, currentTokens }) => {
         });
       }
     } else {
-      // 최근 6개월 (Monthly)
       for (let i = 5; i >= 0; i--) {
         const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
         const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -604,14 +620,12 @@ const TokenTrendChart = ({ history, lang, currentTokens }) => {
         });
       }
       
-      // 기록된 데이터에서 해당 월의 총합 계산
       Object.keys(history).forEach(dateStr => {
         const mStr = dateStr.substring(0, 7);
         const target = data.find(m => m.key === mStr);
         if (target) target.value += history[dateStr];
       });
 
-      // 오늘 날짜가 속한 달에 현재 세션의 토큰량 합산
       const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
       const currentMonthTarget = data.find(m => m.key === currentMonthStr);
       if (currentMonthTarget && currentTokens > 0) {
@@ -622,7 +636,7 @@ const TokenTrendChart = ({ history, lang, currentTokens }) => {
   };
 
   const chartData = getChartData();
-  const maxVal = Math.max(...chartData.map(d => d.value), 1000); // 0으로 나누기 방지, 기본값 1000
+  const maxVal = Math.max(...chartData.map(d => d.value), 1000); 
 
   return (
     <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
@@ -653,21 +667,16 @@ const TokenTrendChart = ({ history, lang, currentTokens }) => {
           const heightPct = (d.value / maxVal) * 100;
           return (
             <div key={i} className="flex flex-col items-center flex-1 group relative h-full justify-end">
-               {/* 툴팁 */}
                <div className="opacity-0 group-hover:opacity-100 absolute -top-7 bg-slate-800 dark:bg-white text-white dark:text-slate-900 text-[9px] py-1 px-2 rounded font-bold transition-opacity whitespace-nowrap z-10 shadow-lg pointer-events-none">
                  {d.value.toLocaleString()}
                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 dark:bg-white rotate-45"></div>
                </div>
-               
-               {/* 막대 바 */}
                <div className="w-full bg-slate-200 dark:bg-slate-800/50 rounded-t-sm flex items-end justify-center relative overflow-hidden" style={{ height: '100%' }}>
                  <div 
                    className="w-full bg-indigo-500/80 dark:bg-indigo-500 transition-all duration-700 rounded-t-sm group-hover:bg-indigo-400" 
-                   style={{ height: `${Math.max(heightPct, 2)}%` }} // 최소 높이 2% 보장
+                   style={{ height: `${Math.max(heightPct, 2)}%` }}
                  ></div>
                </div>
-               
-               {/* 라벨 */}
                <span className="text-[9px] text-slate-500 dark:text-slate-400 mt-1.5 font-medium">{d.label}</span>
             </div>
           );
@@ -682,16 +691,16 @@ export default function App() {
   const [theme, setTheme] = useState('dark');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // API Key 상태 및 저장 확인 상태
+  // 🛡️ [CRITICAL #1 해결] 민감한 API 키를 localStorage 대신 sessionStorage로 변경 (탭 종료 시 안전 파기)
   const [geminiKey, setGeminiKey] = useState(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('gemini_api_key') || '';
+      return sessionStorage.getItem('gemini_api_key') || '';
     }
     return '';
   });
   const [isKeySaved, setIsKeySaved] = useState(() => {
     if (typeof window !== 'undefined') {
-      return !!localStorage.getItem('gemini_api_key');
+      return !!sessionStorage.getItem('gemini_api_key');
     }
     return false;
   });
@@ -703,7 +712,7 @@ export default function App() {
   const handleSaveKey = () => {
     if (!geminiKey.trim()) return;
     if (typeof window !== 'undefined') {
-      localStorage.setItem('gemini_api_key', geminiKey.trim());
+      sessionStorage.setItem('gemini_api_key', geminiKey.trim());
     }
     setIsKeySaved(true);
   };
@@ -712,27 +721,25 @@ export default function App() {
     setIsKeySaved(false);
     setGeminiKey('');
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('gemini_api_key');
+      sessionStorage.removeItem('gemini_api_key');
     }
   };
   
   useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [theme]);
   
+  // 🛡️ [MEDIUM #6 해결] 민감한 인프라 로그가 담긴 채팅 기록을 sessionStorage로 변경
   const [messages, setMessages] = useState(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('chat_history');
+      const saved = sessionStorage.getItem('chat_history');
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
           return parsed.map(m => ({ ...m, isNew: false })); 
         } catch (e) {
-          console.error("Local storage parsing error", e);
+          console.error("Session storage parsing error", e);
         }
       }
     }
@@ -748,11 +755,10 @@ export default function App() {
   useEffect(() => {
     if (messages.length > 0) {
       const toSave = messages.map(m => ({ ...m, isNew: false }));
-      localStorage.setItem('chat_history', JSON.stringify(toSave));
+      sessionStorage.setItem('chat_history', JSON.stringify(toSave));
     }
   }, [messages]);
 
-  // 로컬 스토리지에 날짜별 토큰 사용량 저장 상태 추가
   const [tokenHistory, setTokenHistory] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('token_history');
@@ -767,10 +773,9 @@ export default function App() {
     setMessages(prev => prev.map(m => m.id === id ? { ...m, isNew: false } : m));
   }, []);
 
-  // API 호출 시 히스토리에 누적하는 함수
   const updateTokenHistory = useCallback((newTokens) => {
     if (newTokens <= 0) return;
-    const today = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+    const today = new Date().toISOString().split('T')[0]; 
     setTokenHistory(prev => {
       const updated = { ...prev, [today]: (prev[today] || 0) + newTokens };
       localStorage.setItem('token_history', JSON.stringify(updated));
@@ -785,12 +790,126 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false);
   
   const [activeCLIAction, setActiveCLIAction] = useState(null); 
-  const [tokens, setTokens] = useState({ input: 0, output: 0, total: 0, type: 'NONE', count: 0 });
+  // 🛡️ [번역 토큰 분리 관리] 한/영 번역 토큰 카운터 분리 (FinOps 고도화)
+  const [tokens, setTokens] = useState({ input: 0, output: 0, transKo: 0, transEn: 0, total: 0, type: 'NONE', count: 0 });
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
   const messagesEndRef = useRef(null);
   
+  // 마이크 제어 및 TTS 엔진 상태
+  const currentInputRef = useRef(''); 
+  const recognitionRef = useRef(null); 
+  const handleSendMessageRef = useRef(null); 
+  const [isAudioMuted, setIsAudioMuted] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  
   const t = dict[lang];
+
+  // --- 기존 STT 및 TTS 정상 동작 로직 (절대 수정 금지 구간) ---
+  const wakeUpSpeechEngine = () => {
+    try {
+      if ('speechSynthesis' in window) {
+        const wakeUpUtterance = new SpeechSynthesisUtterance('');
+        wakeUpUtterance.volume = 0; 
+        window.speechSynthesis.speak(wakeUpUtterance);
+      }
+    } catch (e) {}
+  };
+
+  const speakText = useCallback((textToSpeak) => {
+    if (isAudioMuted) return;
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.resume(); 
+      window.speechSynthesis.cancel();
+      
+      const codeBlockRegex = new RegExp('```[\\s\\S]*?```', 'g');
+      const htmlTagRegex = new RegExp('<[^>]+>', 'g');
+      const boldRegex = new RegExp('\\*\\*(.*?)\\*\\*', 'g');
+      const backtickRegex = new RegExp('`', 'g');
+      
+      let cleanText = textToSpeak
+        .replace(codeBlockRegex, lang === 'ko' ? ' 상세 스크립트는 화면의 코드 블록을 참고해 주세요. ' : ' Please refer to the code block on the screen. ')
+        .replace(htmlTagRegex, '')
+        .replace(boldRegex, '$1')
+        .replace(backtickRegex, '');
+        
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = lang === 'ko' ? 'ko-KR' : 'en-US';
+      utterance.rate = 1.1; 
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn("Safe Mode: TTS bypassed error", err);
+    }
+  }, [isAudioMuted, lang]);
+
+  const toggleListening = () => {
+    try {
+      wakeUpSpeechEngine();
+
+      if (isListening) {
+        setIsListening(false);
+        const textToSend = currentInputRef.current;
+        
+        if (recognitionRef.current) {
+          // 💡 [핵심 방어막] 마이크가 꺼지는 비동기 지연 시간 동안 
+          // 잔여 버퍼가 텍스트창을 다시 덮어씌워 전송이 씹힌 것처럼 체감되는 현상을 완벽히 차단
+          recognitionRef.current.onresult = null; 
+          recognitionRef.current.stop();
+        }
+        
+        if (textToSend.trim() && handleSendMessageRef.current) {
+          handleSendMessageRef.current(textToSend);
+        }
+        return;
+      }
+
+      setIsAudioMuted(false); 
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        alert(t.speechNotSupported);
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognitionRef.current = recognition; 
+      recognition.lang = lang === 'ko' ? 'ko-KR' : 'en-US';
+      recognition.continuous = true; 
+      recognition.interimResults = true; 
+      recognition.maxAlternatives = 1;
+
+      const baseInput = currentInputRef.current ? currentInputRef.current + ' ' : '';
+
+      recognition.onstart = () => setIsListening(true);
+      
+      recognition.onresult = (event) => {
+        let sessionTranscript = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          sessionTranscript += event.results[i][0].transcript;
+        }
+        const newVal = baseInput + sessionTranscript;
+        currentInputRef.current = newVal;
+        setInput(newVal); 
+      };
+
+      recognition.onerror = (event) => {
+        console.warn('Speech recognition bypassed error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognition.start();
+    } catch (error) {
+      console.warn('Speech API blocked by browser security.', error);
+      alert("브라우저 보안 정책으로 인해 마이크 접근이 차단되었습니다.");
+      setIsListening(false);
+    }
+  };
+  // --------------------------------------------------------
 
   const categoryCounts = kbData[lang].reduce((acc, curr) => {
     const localizedCatName = t.categories[curr.category] || curr.category;
@@ -800,28 +919,44 @@ export default function App() {
   const maxCategoryCount = Math.max(...Object.values(categoryCounts));
 
   const fetchGemini = async (payload) => {
+    // 🛡️ [MEDIUM #7 해결] 하드코딩된 일일 사용량 초과(Rate Limit) 자체 방어 (비용 폭탄 원천 차단)
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayTokens = tokenHistory[todayStr] || 0;
+    if (todayTokens > 50000) {
+      throw new Error("오늘의 API 무료 사용량 한도(50,000 Token)를 초과했습니다. 관리자에게 문의하세요.");
+    }
+
     let apiKey = geminiKey.trim();
     try {
       if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
         apiKey = import.meta.env.VITE_GEMINI_API_KEY;
       }
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
     
     if (!apiKey) throw new Error(t.apiKeyMissingError);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    for (let attempt = 0; attempt < 5; attempt++) {
+    // 🛡️ [CRITICAL #3 해결] URL 파라미터에서 API Key 제거. 헤더로 보안 전송
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+    
+    // 🛡️ [MEDIUM #7 해결] 무한 재시도 핑퐁을 막기 위해 5회 -> 3회로 축소
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const response = await fetch(url, { 
+          method: 'POST', 
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey // 🛡️ 평문 URL 대신 안전한 HTTP 헤더 사용
+          }, 
+          body: JSON.stringify(payload) 
+        });
         if (!response.ok) {
-          if (response.status === 429) { await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); continue; }
+          if (response.status === 429 || response.status === 503) { await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); continue; }
           throw new Error(`API Error: ${response.status}`);
         }
         return await response.json();
-      } catch (err) { if (attempt === 4) throw err; }
+      } catch (err) { if (attempt === 2) throw err; }
     }
+    throw new Error("API 타임아웃: 서버가 응답하지 않거나 트래픽이 초과되었습니다.");
   };
 
   const translateMessage = async (text, targetLang, msgId) => {
@@ -831,12 +966,17 @@ export default function App() {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         systemInstruction: { parts: [{ text: "You are an expert IT translator. Provide direct translation without any markdown wrapping or conversational fillers." }] }
       });
-      const translatedText = res.candidates?.[0]?.content?.parts?.[0]?.text;
+      const translatedText = res?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (translatedText) {
         setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: { ...m.content, [targetLang]: translatedText.trim() } } : m));
         if (res.usageMetadata && res.usageMetadata.totalTokenCount) {
-           setTokens(prev => ({ ...prev, total: prev.total + res.usageMetadata.totalTokenCount }));
-           updateTokenHistory(res.usageMetadata.totalTokenCount); // 백그라운드 번역 비용 차트 기록
+           setTokens(prev => ({ 
+             ...prev, 
+             total: prev.total + res.usageMetadata.totalTokenCount,
+             transKo: targetLang === 'ko' ? prev.transKo + res.usageMetadata.totalTokenCount : prev.transKo, // 🛡️ 한글 번역 토큰 분리 계상
+             transEn: targetLang === 'en' ? prev.transEn + res.usageMetadata.totalTokenCount : prev.transEn  // 🛡️ 영문 번역 토큰 분리 계상
+           }));
+           updateTokenHistory(res.usageMetadata.totalTokenCount); 
         }
       }
     } catch (e) {
@@ -854,6 +994,8 @@ export default function App() {
   };
 
   const handleCategoryClick = (localizedCatName) => {
+    wakeUpSpeechEngine();
+
     const issues = kbData[lang].filter(item => {
       const catName = t.categories[item.category] || item.category;
       return catName === localizedCatName;
@@ -871,11 +1013,18 @@ export default function App() {
       setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', type: 'CACHED_RCA', caseId: item.id, isNew: true }]);
       setActiveCLIAction(item.id);
       setIsMobileMenuOpen(false);
+      
+      if (!isAudioMuted) {
+        const textToSpeak = t.cachedReply.replace('{title}', item.title).replace('{rootCause}', item.rootCause).replace('{resolution}', item.resolution);
+        speakText(textToSpeak);
+      }
     }, 400);
   };
 
   const handleSendMessage = async (userText) => {
     if (!userText.trim() || isLoading) return;
+
+    wakeUpSpeechEngine();
 
     let hasKey = geminiKey.trim() !== "";
     try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
@@ -885,6 +1034,7 @@ export default function App() {
     }
 
     setInput('');
+    currentInputRef.current = ''; 
     const userMsgId = Date.now().toString() + "-u";
     setMessages(prev => [...prev, { 
       id: userMsgId, role: 'user', type: 'CUSTOM_CHAT', 
@@ -894,7 +1044,8 @@ export default function App() {
     setIsLoading(true);
 
     const targetLang = lang === 'ko' ? 'en' : 'ko';
-    translateMessage(userText, targetLang, userMsgId);
+    
+    await translateMessage(userText, targetLang, userMsgId);
 
     const context = retrieveContext(userText);
     
@@ -925,11 +1076,13 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         role: m.role === 'user' ? 'user' : 'model',
         parts: [{ text: m.content[lang] || m.content[m.originalLang] }]
       }));
-    contents.push({ role: 'user', parts: [{ text: userText }] });
+    
+    // 🛡️ [HIGH #4 해결] Prompt Injection 공격을 무력화하기 위한 마스킹 박스 처리 적용
+    contents.push({ role: 'user', parts: [{ text: `<<<USER_INPUT_START>>>\n${userText}\n<<<USER_INPUT_END>>>` }] });
 
     try {
       const result = await fetchGemini({ contents, systemInstruction: { parts: [{ text: systemInstruction }] } });
-      let reply = result.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+      let reply = result?.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
       
       const matchIdRegex = /\[MATCHED_KB_ID:\s*([A-Z0-9-]+)\]/i;
       const match = reply.match(matchIdRegex);
@@ -942,13 +1095,14 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 
       if (result.usageMetadata && result.usageMetadata.totalTokenCount) {
         setTokens(prev => ({
+          ...prev,
           input: prev.input + result.usageMetadata.promptTokenCount,
           output: prev.output + result.usageMetadata.candidatesTokenCount,
           total: prev.total + result.usageMetadata.totalTokenCount,
           type: 'API',
           count: result.usageMetadata.totalTokenCount
         }));
-        updateTokenHistory(result.usageMetadata.totalTokenCount); // 메인 대화 비용 차트 기록
+        updateTokenHistory(result.usageMetadata.totalTokenCount); 
       }
 
       const aiMsgId = Date.now().toString() + "-a";
@@ -959,6 +1113,8 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
       }]);
       
       translateMessage(reply, targetLang, aiMsgId);
+
+      speakText(reply);
 
       if (matchedId) {
         setActiveCLIAction(matchedId); 
@@ -977,6 +1133,10 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    handleSendMessageRef.current = handleSendMessage;
+  }, [handleSendMessage]);
 
   const triggerSelectedSimulation = () => {
     if (isSimulating) return;
@@ -1001,6 +1161,11 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
       const sysMsgId = Date.now().toString() + "-sys";
       setMessages(prev => [...prev, { id: sysMsgId, role: 'system', type: 'SIM_RCA', caseId: targetCase.id, isNew: true }]);
       setActiveCLIAction(targetCase.id); 
+      
+      if (!isAudioMuted) {
+        const textToSpeak = t.simRcaMsg.replace('{title}', targetCase.title).replace('{rootCause}', targetCase.rootCause);
+        speakText(textToSpeak);
+      }
     }, 5000);
   };
 
@@ -1012,10 +1177,10 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     setIsSimulating(false);
   };
 
-  // --- 대화 초기화(Clear) 핸들러 ---
   const handleClearChat = () => {
     setMessages([{ id: Date.now().toString() + "-init", role: 'assistant', type: 'INIT', isNew: false }]);
     setActiveCLIAction(null);
+    try { if(window.speechSynthesis) window.speechSynthesis.cancel(); } catch(e) {}
   };
 
   const getDynamicContent = (msg, currentLang) => {
@@ -1050,7 +1215,6 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
   return (
     <div className="h-screen flex flex-col md:flex-row font-sans overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300">
       
-      {/* Toast Notifications */}
       <div className="absolute top-4 right-4 z-50 space-y-3 pointer-events-none">
         {toasts.map(toast => (
           <div key={toast.id} className={`flex items-center gap-3 p-4 rounded-xl border backdrop-blur-md shadow-2xl transition-all animate-in slide-in-from-right-8 ${toast.color}`}>
@@ -1060,7 +1224,6 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         ))}
       </div>
 
-      {/* Mobile Overlay Background */}
       {isMobileMenuOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden transition-opacity" 
@@ -1068,7 +1231,6 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0`}>
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -1097,7 +1259,6 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
           
-          {/* API Key Input Section */}
           <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
              <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                 <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
@@ -1115,7 +1276,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                     onClick={handleSaveKey}
                     className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500"
                  >
-                   {t.saveBtn}
+                    {t.saveBtn}
                  </button>
                </div>
              ) : (
@@ -1165,9 +1326,18 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
               <span className="text-slate-600 dark:text-slate-500 font-bold">{t.inputLabel}</span>
               <span className="text-indigo-600 dark:text-indigo-300 font-bold">{tokens.input.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between text-xs mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50">
+            <div className="flex justify-between text-xs mb-2">
               <span className="text-slate-600 dark:text-slate-500 font-bold">{t.outputLabel}</span>
               <span className="text-teal-600 dark:text-teal-300 font-bold">{tokens.output.toLocaleString()}</span>
+            </div>
+            {/* 🛡️ FinOps: 한/영 번역 토큰 UI 분리 표시 */}
+            <div className="flex justify-between text-xs mb-2">
+              <span className="text-slate-600 dark:text-slate-500 font-bold flex items-center gap-1.5"><Globe className="w-3.5 h-3.5"/>{t.transKoLabel}</span>
+              <span className="text-orange-500 dark:text-orange-400 font-bold">{tokens.transKo.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-xs mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50">
+              <span className="text-slate-600 dark:text-slate-500 font-bold flex items-center gap-1.5"><Globe className="w-3.5 h-3.5"/>{t.transEnLabel}</span>
+              <span className="text-orange-500 dark:text-orange-400 font-bold">{tokens.transEn.toLocaleString()}</span>
             </div>
             <div className="text-[10px] text-slate-500 text-center font-bold text-green-600 dark:text-green-400 mb-2">
                {getLatestTokenStr()}
@@ -1191,7 +1361,6 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         </div>
       </aside>
 
-      {/* Main UI Area */}
       <main className="flex-1 flex flex-col h-full relative bg-slate-50 dark:bg-[#0B1120]">
         <header className="h-14 bg-white/80 dark:bg-[#0B1120]/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-between md:justify-end items-center px-4 md:px-6 z-20 shrink-0 gap-4 transition-colors duration-300">
            
@@ -1200,7 +1369,17 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
            </button>
 
            <div className="flex items-center gap-4">
-             {/* 대화 초기화 버튼 추가 */}
+             <button 
+               onClick={() => {
+                 try { if (!isAudioMuted && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+                 setIsAudioMuted(!isAudioMuted);
+               }}
+               title={t.voiceMuteToggle}
+               className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-300 dark:border-slate-700 shadow-sm"
+             >
+               {isAudioMuted ? '🔇' : '🔊'}
+             </button>
+
              <button 
                onClick={handleClearChat}
                title={t.clearChat}
@@ -1295,12 +1474,10 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
             )}
             <div ref={messagesEndRef} />
             
-            {/* 모바일 화면용 여백 (FAB에 가려지는 것 방지) */}
             {activeCLIAction && <div className="h-16 md:hidden"></div>}
           </div>
         </div>
 
-        {/* --- 모바일 전용 플로팅 액션 버튼 (FAB) --- */}
         {activeCLIAction && (
           <div className="md:hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-40 w-[90%] animate-in slide-in-from-bottom-5">
             <button
@@ -1336,13 +1513,32 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 
           <div className="max-w-4xl mx-auto w-full p-4 pt-2">
             <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(input); }} className="relative flex items-center">
+              <button
+                type="button"
+                onClick={toggleListening}
+                disabled={isLoading}
+                title={isListening ? "클릭 시 음성 입력 종료 및 질문 전송" : "클릭 시 음성 질문 시작"}
+                className={`absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center transition-all text-[16px] shadow-sm ${
+                  isListening 
+                    ? 'bg-red-100 dark:bg-red-500/20 grayscale-0 animate-pulse border border-red-300 dark:border-red-500/50' 
+                    : 'grayscale opacity-70 hover:opacity-100 hover:grayscale-0 bg-transparent'
+                }`}
+              >
+                {isListening ? '🔴' : '🎤'}
+              </button>
+
               <input
                 type="text"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={t.inputPlaceholder}
-                className="w-full bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white font-medium rounded-full pl-6 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner"
-                disabled={isLoading}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  currentInputRef.current = e.target.value; 
+                }}
+                // 🛡️ [HIGH #5 해결] 입력 길이 제한을 500자로 두어 악의적 비용 유발 방지
+                maxLength={500} 
+                placeholder={isListening ? t.listening : t.inputPlaceholder}
+                className={`w-full bg-slate-100 dark:bg-slate-900 border ${isListening ? 'border-red-400 dark:border-red-500/50' : 'border-slate-300 dark:border-slate-700'} text-slate-900 dark:text-white font-medium rounded-full pl-14 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner`}
+                disabled={isLoading || isListening}
               />
               <button
                 type="submit"
