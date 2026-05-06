@@ -176,8 +176,8 @@ const kbData = {
 
 const dict = {
   ko: {
-    title: "Infra Troubleshooting",
-    subtitle: "AI AGENT",
+    title: "My IT Agent",
+    subtitle: "Infra Troubleshooting",
     initMsg: "안녕하세요. 인프라 트러블슈팅 AI 에이전트입니다. 궁금한 점은 자유롭게 채팅에 남겨주세요.",
     urgencyBtn: "🚨 긴급 장애",
     statsTitle: "KB 장애 통계",
@@ -226,8 +226,8 @@ const dict = {
     clearChat: "대화 초기화"
   },
   en: {
-    title: "Infra Troubleshooting",
-    subtitle: "AI AGENT",
+    title: "My IT Agent",
+    subtitle: "Infra Troubleshooting",
     initMsg: "Hello. I am the Infra Troubleshooting AI Agent. Feel free to leave any questions in the chat.",
     urgencyBtn: "🚨 Critical Alert",
     statsTitle: "KB Incident Stats",
