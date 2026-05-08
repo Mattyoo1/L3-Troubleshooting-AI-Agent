@@ -4,7 +4,7 @@ import {
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity, 
   HelpCircle, Loader2, Send, BarChart3, Globe, Sun, Moon,
   Menu, X, CheckCircle, Zap, Calendar, CalendarDays, Key, Trash2,
-  Search, FileCode, Server, AlertTriangle, ArrowRight
+  Search, FileCode, Server, AlertTriangle, ArrowRight, User, Lock
 } from 'lucide-react';
 
 // === 1. 파싱 에러 원천 차단 (백틱 동적 생성 - 캔버스 렌더링 보호) ===
@@ -190,8 +190,8 @@ const dict = {
     statsTitle: "KB 장애 통계",
     finopsTitle: "FinOps 토큰 모니터링",
     totalUsage: "총 사용량",
-    inputLabel: "입력",
-    outputLabel: "출력",
+    inputLabel: "입력 (Input)",
+    outputLabel: "출력 (Output)",
     transKoLabel: "한글 (EN ➔ KO)",
     transEnLabel: "영어 (KO ➔ EN)",
     lastLabel: "Last:",
@@ -250,7 +250,18 @@ const dict = {
     agentExecuteBtn: "원클릭 원격 복구 승인",
     agentExecuting: "인프라 복구 진행 중...",
     agentSuccess: "조치 성공 (정상화 완료)",
-    backToChat: "채팅으로 돌아가기"
+    backToChat: "채팅으로 돌아가기",
+    adminMode: "관리자 권한 (Admin Mode)",
+    unauthorizedBtn: "권한 없음 (Admin Only)",
+    chatLabel: "채팅 (Chat)",
+    agentLabel: "로그 분석 (Agent)",
+    shellDownload: "Shell 다운로드",
+    ansibleDownload: "Ansible 다운로드",
+    transTitle: "번역",
+    accessDenied: "접근 불가",
+    unknownLogError: "알려지지 않은 에러 로그입니다. AI 동적 분석을 위해 사이드바에서 Gemini API Key를 설정해주세요.",
+    apiRequestFailed: "API 요청에 실패했습니다.",
+    aiAnalysisError: "AI 분석 중 오류가 발생했습니다:"
   },
   en: {
     title: "My IT Agent",
@@ -322,7 +333,18 @@ const dict = {
     agentExecuteBtn: "Approve One-Click Recovery",
     agentExecuting: "Executing infrastructure recovery...",
     agentSuccess: "Remediation Successful",
-    backToChat: "Back to Chat"
+    backToChat: "Back to Chat",
+    adminMode: "Admin Privilege Mode",
+    unauthorizedBtn: "Unauthorized (Admin Only)",
+    chatLabel: "Chat",
+    agentLabel: "Agent",
+    shellDownload: "Download Shell",
+    ansibleDownload: "Download Ansible",
+    transTitle: "Translate",
+    accessDenied: "Access Denied",
+    unknownLogError: "Unknown error log. Please set the Gemini API Key in the sidebar for dynamic AI analysis.",
+    apiRequestFailed: "API request failed.",
+    aiAnalysisError: "An error occurred during AI analysis:"
   }
 };
 
@@ -675,7 +697,7 @@ const TokenTrendChart = ({ history, lang, currentTokens }) => {
   const maxVal = Math.max(...chartData.map(d => d.value), 1000); 
 
   return (
-    <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+    <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800/50">
       <div className="flex justify-between items-center mb-3">
         <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1">
           {chartView === 'daily' ? <CalendarDays className="w-3 h-3" /> : <Calendar className="w-3 h-3" />}
@@ -733,6 +755,10 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [matchedSolution, setMatchedSolution] = useState(null);
   const [executionStatus, setExecutionStatus] = useState('idle');
+  
+  // === [신규 추가] 관리자 권한 상태 (RBAC 모의) ===
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState('USER'); // 'USER' | 'ADMIN'
 
   // 🛡️ [CRITICAL - 언어 동기화 로직 추가] 
   useEffect(() => {
@@ -828,7 +854,20 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false);
   
   const [activeCLIAction, setActiveCLIAction] = useState(null); 
-  const [tokens, setTokens] = useState({ input: 0, output: 0, transKo: 0, transEn: 0, total: 0, type: 'NONE', count: 0 });
+  
+  // 🛡️ [수정됨] FinOps 토큰 관리 고도화 (채팅과 에이전트 토큰 분리)
+  const [tokens, setTokens] = useState({ 
+    input: 0, 
+    output: 0, 
+    transKo: 0, 
+    transEn: 0, 
+    chat: 0, 
+    agent: 0, 
+    total: 0, 
+    type: 'NONE', 
+    count: 0 
+  });
+  
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   
   const messagesEndRef = useRef(null);
@@ -954,8 +993,17 @@ export default function App() {
     const todayStr = new Date().toISOString().split('T')[0];
     const todayTokens = tokenHistory[todayStr] || 0;
     if (todayTokens > 50000) throw new Error("오늘의 API 무료 사용량 한도(50,000 Token)를 초과했습니다. 관리자에게 문의하세요.");
+
+    let apiKey = geminiKey.trim();
+    try {
+      if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
+        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      }
+    } catch (e) {}
     
-    const url = `/api/gemini`;
+    if (!apiKey) throw new Error(t.apiKeyMissingError);
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -963,24 +1011,18 @@ export default function App() {
           method: 'POST', 
           headers: { 
             'Content-Type': 'application/json',
-          
+            'x-goog-api-key': apiKey 
           }, 
           body: JSON.stringify(payload) 
         });
-
         if (!response.ok) {
-          if (response.status === 429 || response.status === 503) { 
-            await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); 
-            continue; 
-          }
-          throw new Error(`Server Error: ${response.status}`);
+          if (response.status === 429 || response.status === 503) { await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); continue; }
+          throw new Error(t.apiRequestFailed);
         }
         return await response.json();
-      } catch (err) { 
-        if (attempt === 2) throw err; 
-      }
+      } catch (err) { if (attempt === 2) throw err; }
     }
-    throw new Error("API 타임아웃: 서버가 응답하지 않습니다.");
+    throw new Error("API 타임아웃: 서버가 응답하지 않거나 트래픽이 초과되었습니다.");
   };
 
   const translateMessage = async (text, targetLang, msgId) => {
@@ -998,7 +1040,8 @@ export default function App() {
              ...prev, 
              total: prev.total + res.usageMetadata.totalTokenCount,
              transKo: targetLang === 'ko' ? prev.transKo + res.usageMetadata.totalTokenCount : prev.transKo,
-             transEn: targetLang === 'en' ? prev.transEn + res.usageMetadata.totalTokenCount : prev.transEn
+             transEn: targetLang === 'en' ? prev.transEn + res.usageMetadata.totalTokenCount : prev.transEn,
+             chat: prev.chat + res.usageMetadata.totalTokenCount // 번역은 채팅의 부가기능으로 Chat 토큰에 포함
            }));
            updateTokenHistory(res.usageMetadata.totalTokenCount); 
         }
@@ -1014,7 +1057,7 @@ export default function App() {
       item.title.toLowerCase().includes(q) || item.rootCause.toLowerCase().includes(q) || item.resolution.toLowerCase().includes(q)
     );
     if (matches.length === 0) return kbData[lang].map(d => `[${d.id}] ${d.title}`).join('\n');
-    return matches.map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause}\nResolution: ${m.resolution}\nCLI Mock: ${m.cliMock}\nInsight: ${m.insight}`).join('\n\n');
+    return matches.map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause}\nResolution: ${m.resolution}\nCLI Mock: ${m.insight}`).join('\n\n');
   };
 
   const handleCategoryClick = (localizedCatName) => {
@@ -1049,6 +1092,13 @@ export default function App() {
     if (!userText.trim() || isLoading) return;
 
     wakeUpSpeechEngine();
+
+    let hasKey = geminiKey.trim() !== "";
+    try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
+    if (!hasKey) {
+      alert(t.apiKeyMissingAlert);
+      return;
+    }
 
     setInput('');
     currentInputRef.current = ''; 
@@ -1115,6 +1165,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
           input: prev.input + result.usageMetadata.promptTokenCount,
           output: prev.output + result.usageMetadata.candidatesTokenCount,
           total: prev.total + result.usageMetadata.totalTokenCount,
+          chat: prev.chat + result.usageMetadata.totalTokenCount, // 🛡️ 채팅 토큰 누적
           type: 'API',
           count: result.usageMetadata.totalTokenCount
         }));
@@ -1231,32 +1282,102 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     return `${t.lastLabel} None`;
   };
 
-  // === [신규 기능] 에이전트 로그 분석 로직 ===
-  const handleAnalyzeLog = useCallback(() => {
+  // === [신규 기능] 에이전트 로그 분석 로직 (API 연동) ===
+  const handleAnalyzeLog = useCallback(async () => {
     if (!logInput || !logInput.trim()) return;
     setAnalyzing(true);
     setMatchedSolution(null);
     setExecutionStatus('idle');
 
-    setTimeout(() => {
-      const lowerLog = logInput.toLowerCase();
-      let found = kbData[lang][0]; 
-      
-      if (lowerLog.includes('vsftpd') || lowerLog.includes('ftp') || lowerLog.includes('500 oops')) {
-        found = kbData[lang][1];
-      } else if (lowerLog.includes('space') || lowerLog.includes('tomcat')) {
-        found = kbData[lang][2];
-      } else if (lowerLog.includes('x509') || lowerLog.includes('connection refused')) {
-        found = kbData[lang][3];
-      } else if (lowerLog.includes('terraform') || lowerLog.includes('ncloud')) {
-        found = kbData[lang][4];
-      } else if (lowerLog.includes('mariadb') || lowerLog.includes('binlog')) {
-        found = kbData[lang][5];
-      }
-      setMatchedSolution(found);
+    const lowerLog = logInput.toLowerCase();
+    let found = null;
+    
+    // 1. 알려진 에러 로그는 KB에서 즉시 매칭 (비용 0)
+    if (lowerLog.includes('vsftpd') || lowerLog.includes('ftp') || lowerLog.includes('500 oops')) {
+      found = kbData[lang][1];
+    } else if (lowerLog.includes('space') || lowerLog.includes('tomcat')) {
+      found = kbData[lang][2];
+    } else if (lowerLog.includes('x509') || lowerLog.includes('connection refused')) {
+      found = kbData[lang][3];
+    } else if (lowerLog.includes('terraform') || lowerLog.includes('ncloud')) {
+      found = kbData[lang][4];
+    } else if (lowerLog.includes('mariadb') || lowerLog.includes('binlog')) {
+      found = kbData[lang][5];
+    }
+
+    if (found) {
+      setTimeout(() => {
+        setMatchedSolution(found);
+        setAnalyzing(false);
+      }, 1000);
+      return;
+    }
+
+    // 2. KB에 없는 알 수 없는 에러 로그는 Gemini API 동적 호출
+    let apiKey = geminiKey.trim();
+    try { if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) apiKey = import.meta.env.VITE_GEMINI_API_KEY; } catch(e){}
+    
+    if (!apiKey) {
+      alert(t.unknownLogError);
       setAnalyzing(false);
-    }, 1500);
-  }, [logInput, lang]);
+      return;
+    }
+
+    const systemInstruction = `당신은 클라우드/인프라 최고 등급(L3) 장애 해결 에이전트입니다.
+제공된 에러 로그를 분석하여 반드시 아래 JSON 형식으로만 응답하세요. 다른 설명은 추가하지 마세요.
+{
+  "id": "TS-DYNAMIC-AI",
+  "title": "로그의 핵심을 요약한 장애 제목",
+  "rootCause": "장애가 발생한 근본 원인 상세 분석",
+  "resolution": "장애를 해결하기 위한 단계별 조치 방안",
+  "cliMock": "터미널에서 직접 실행할 수 있는 Bash 명령어들 (각 라인은 $ 로 시작할 것. 마크다운 백틱 사용 금지)",
+  "insight": "이 문제를 자동화하기 위한 Ansible Playbook. 반드시 코드 블록 형태(${TBQ}yaml ... ${TBQ})로 작성할 것."
+}`;
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: `언어: ${lang === 'ko' ? '한국어' : 'English'}\n\nError Log:\n${logInput}` }] }],
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+
+      if (!response.ok) throw new Error(t.apiRequestFailed);
+      const result = await response.json();
+      const replyText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (replyText) {
+        const dynamicSolution = JSON.parse(replyText);
+        setMatchedSolution(dynamicSolution);
+
+        if (result.usageMetadata && result.usageMetadata.totalTokenCount) {
+          const usedTokens = result.usageMetadata.totalTokenCount;
+          setTokens(prev => ({ 
+            ...prev, 
+            input: prev.input + result.usageMetadata.promptTokenCount, 
+            output: prev.output + result.usageMetadata.candidatesTokenCount, 
+            total: prev.total + usedTokens, 
+            agent: prev.agent + usedTokens, // 🛡️ 에이전트 토큰 누적
+            type: 'API', 
+            count: usedTokens 
+          }));
+          const today = new Date().toISOString().split('T')[0];
+          setTokenHistory(prev => {
+            const updated = { ...prev, [today]: (prev[today] || 0) + usedTokens };
+            localStorage.setItem('token_history', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      }
+    } catch (error) {
+      alert(`${t.aiAnalysisError}\n${error.message}`);
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [logInput, lang, geminiKey, t]);
 
   // === [신규 기능] 파일 다운로드 유틸리티 (XSS 방어) ===
   const downloadFile = useCallback((filename, content) => {
@@ -1368,9 +1489,11 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
           
           <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
-             <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
-             </h2>
+             <div className="flex items-center justify-between mb-2">
+               <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                  <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
+               </h2>
+             </div>
              {!isKeySaved ? (
                <div className="flex gap-2">
                  <input
@@ -1400,6 +1523,19 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                  </button>
                </div>
              )}
+
+             {/* 🛡️ [수정됨] 관리자 권한 (RBAC) 토글 - ADMIN이 아니면 아예 숨김 처리 */}
+             {userRole === 'ADMIN' && (
+               <div className="mt-3 flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg shadow-sm animate-in fade-in zoom-in duration-200">
+                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                   <ShieldAlert className="w-3.5 h-3.5" /> {t.adminMode}
+                 </span>
+                 <label className="relative inline-flex items-center cursor-pointer">
+                   <input type="checkbox" className="sr-only peer" checked={isAdmin} onChange={() => setIsAdmin(!isAdmin)} />
+                   <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                 </label>
+               </div>
+             )}
           </div>
 
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
@@ -1425,27 +1561,57 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
           <h2 className="text-[11px] font-bold text-slate-600 dark:text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Cpu className="w-4 h-4" /> {t.finopsTitle}
           </h2>
+          
+          {/* 🛡️ [수정됨] FinOps 대시보드 - 프로그레스 바 고도화 및 정렬 수정 */}
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
-            <div className="text-center mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50">
+            <div className="text-center mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50 relative">
               <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest block mb-1 font-bold">{t.totalUsage}</span>
-              <span className="text-3xl font-light text-slate-900 dark:text-white">{tokens.total.toLocaleString()}</span>
+              <div className="text-3xl font-light text-slate-900 dark:text-white flex justify-center items-baseline gap-1">
+                {tokens.total.toLocaleString()} <span className="text-[10px] text-slate-400 font-bold mb-1">{"/ 50K"}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-slate-600 dark:text-slate-500 font-bold">{t.inputLabel}</span>
-              <span className="text-indigo-600 dark:text-indigo-300 font-bold">{tokens.input.toLocaleString()}</span>
+
+            {/* 🛡️ FinOps: 채팅 vs 로그분석 게이지 바 */}
+            <div className="space-y-3.5 mb-5 pb-4 border-b border-slate-200 dark:border-slate-800/50">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1"><MessageSquare className="w-3 h-3"/> {t.chatLabel}</span>
+                  <span className="text-slate-700 dark:text-slate-300">{tokens.chat.toLocaleString()}</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min((tokens.chat / 50000) * 100, 100)}%` }}></div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex justify-between items-center text-[10px] font-bold">
+                  <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1"><Search className="w-3 h-3"/> {t.agentLabel}</span>
+                  <span className="text-slate-700 dark:text-slate-300">{tokens.agent.toLocaleString()}</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full transition-all duration-1000" style={{ width: `${Math.min((tokens.agent / 50000) * 100, 100)}%` }}></div>
+                </div>
+              </div>
             </div>
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-slate-600 dark:text-slate-500 font-bold">{t.outputLabel}</span>
-              <span className="text-teal-600 dark:text-teal-300 font-bold">{tokens.output.toLocaleString()}</span>
+
+            {/* 상세 내역 요약 그리드 */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-700/80 flex flex-col justify-center">
+                <span className="text-[9px] text-slate-500 block mb-1 font-bold leading-tight">
+                  {t.inputLabel} {"/"} <br />{t.outputLabel}
+                </span>
+                <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-auto">
+                  <span className="text-indigo-500">{tokens.input}</span> <span className="text-slate-400 font-normal">{"/"}</span> <span className="text-teal-500">{tokens.output}</span>
+                </div>
+              </div>
+              <div className="bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-700/80 flex flex-col justify-center">
+                <span className="text-[9px] text-slate-500 block mb-1 font-bold flex items-center gap-1 leading-tight"><Globe className="w-2.5 h-2.5 shrink-0"/>{t.transTitle}<br />{"(KO/EN)"}</span>
+                <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-auto">
+                  <span className="text-orange-500">{tokens.transKo}</span> <span className="text-slate-400 font-normal">{"/"}</span> <span className="text-orange-500">{tokens.transEn}</span>
+                </div>
+              </div>
             </div>
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-slate-600 dark:text-slate-500 font-bold flex items-center gap-1.5"><Globe className="w-3.5 h-3.5"/>{t.transKoLabel}</span>
-              <span className="text-orange-500 dark:text-orange-400 font-bold">{tokens.transKo.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between text-xs mb-4 pb-4 border-b border-slate-200 dark:border-slate-800/50">
-              <span className="text-slate-600 dark:text-slate-500 font-bold flex items-center gap-1.5"><Globe className="w-3.5 h-3.5"/>{t.transEnLabel}</span>
-              <span className="text-orange-500 dark:text-orange-400 font-bold">{tokens.transEn.toLocaleString()}</span>
-            </div>
+
             <div className="text-[10px] text-slate-500 text-center font-bold text-green-600 dark:text-green-400 mb-2">
                {getLatestTokenStr()}
             </div>
@@ -1484,6 +1650,14 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-300 dark:border-slate-700 shadow-sm"
              >
                {isAudioMuted ? '🔇' : '🔊'}
+             </button>
+
+             {/* 권한 스위치 (이스트에그 형태의 관리자 진입점 - 툴팁 완전 제거) */}
+             <button 
+               onClick={() => setUserRole(prev => prev === 'ADMIN' ? 'USER' : 'ADMIN')}
+               className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors text-sm border shadow-sm ${userRole === 'ADMIN' ? 'bg-emerald-100 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400' : 'bg-slate-200 border-slate-300 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}
+             >
+               <User className="w-4 h-4" />
              </button>
 
              <button 
@@ -1659,6 +1833,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
           </>
         )}
 
+        {/* 🛡️ [수정됨] 에이전트 뷰: 가로 스크롤 잘림 문제 해결 */}
         {activeView === 'agentic' && (
           <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar scroll-smooth animate-in slide-in-from-right-8 duration-300">
             <div className="max-w-4xl mx-auto space-y-6 pb-4">
@@ -1704,85 +1879,95 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
               </div>
 
               {matchedSolution && (
-                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-indigo-200 dark:border-indigo-500/30 overflow-hidden shadow-xl animate-in fade-in duration-500">
-                  <div className="bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-500/20 p-6 flex items-start space-x-4">
-                    <ShieldAlert className="w-7 h-7 text-indigo-500 shrink-0 mt-0.5" />
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">{matchedSolution.title}</h3>
-                      <div className="mt-4 space-y-3">
-                        <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-                          <span className="font-bold px-2 py-1 rounded mr-2 border text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/50 border-indigo-200 dark:border-indigo-700/50">{t.agentRootCause}</span> 
-                          {matchedSolution.rootCause}
-                        </p>
-                        <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-                          <span className="font-bold px-2 py-1 rounded mr-2 border text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 border-emerald-200 dark:border-emerald-700/50">{t.agentResolution}</span> 
-                          {matchedSolution.resolution}
-                        </p>
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-indigo-200 dark:border-indigo-500/30 overflow-x-auto custom-scrollbar shadow-xl animate-in fade-in duration-500">
+                  <div className="min-w-[600px] md:min-w-full">
+                    <div className="bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-500/20 p-6 flex items-start space-x-4">
+                      <ShieldAlert className="w-7 h-7 text-indigo-500 shrink-0 mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white break-words">{matchedSolution.title}</h3>
+                        <div className="mt-4 space-y-3">
+                          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words whitespace-pre-wrap">
+                            <span className="font-bold px-2 py-1 rounded mr-2 border text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/50 border-indigo-200 dark:border-indigo-700/50 inline-block mb-1">{t.agentRootCause}</span> 
+                            {matchedSolution.rootCause}
+                          </p>
+                          <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words whitespace-pre-wrap">
+                            <span className="font-bold px-2 py-1 rounded mr-2 border text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/50 border-emerald-200 dark:border-emerald-700/50 inline-block mb-1">{t.agentResolution}</span> 
+                            {matchedSolution.resolution}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="p-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
-                      <span className="text-base font-bold text-emerald-600 dark:text-emerald-500 flex items-center space-x-2">
-                        <Server className="w-5 h-5"/> <span>{t.agentAutoScript}</span>
-                      </span>
-                      <div className="flex space-x-3">
-                        <button 
-                          onClick={() => handleDownloadShell(matchedSolution)}
-                          className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 text-xs border px-4 py-2.5 rounded-lg font-bold shadow-sm transition-colors bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white"
-                        >
-                          <Terminal className="w-4 h-4 text-blue-600 dark:text-blue-400" /> <span>Shell 다운로드</span>
-                        </button>
-                        <button 
-                          onClick={() => handleDownloadAnsible(matchedSolution)}
-                          className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 text-xs border px-4 py-2.5 rounded-lg font-bold shadow-sm transition-colors bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white"
-                        >
-                          <FileCode className="w-4 h-4 text-amber-600 dark:text-amber-400" /> <span>Ansible 다운로드</span>
-                        </button>
+                    <div className="p-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+                        <span className="text-base font-bold text-emerald-600 dark:text-emerald-500 flex items-center space-x-2 shrink-0">
+                          <Server className="w-5 h-5"/> <span>{t.agentAutoScript}</span>
+                        </span>
+                        <div className="flex space-x-3 shrink-0">
+                          <button 
+                            onClick={() => handleDownloadShell(matchedSolution)}
+                            className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 text-xs border px-4 py-2.5 rounded-lg font-bold shadow-sm transition-colors bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white"
+                          >
+                            <Terminal className="w-4 h-4 text-blue-600 dark:text-blue-400" /> <span>{t.shellDownload}</span>
+                          </button>
+                          <button 
+                            onClick={() => handleDownloadAnsible(matchedSolution)}
+                            className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 text-xs border px-4 py-2.5 rounded-lg font-bold shadow-sm transition-colors bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white"
+                          >
+                            <FileCode className="w-4 h-4 text-amber-600 dark:text-amber-400" /> <span>{t.ansibleDownload}</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="bg-[#0f172a] p-5 rounded-xl border border-slate-800 text-white font-mono text-sm overflow-x-auto whitespace-pre leading-relaxed mb-6 shadow-inner">
-                      <div className="text-slate-500 mb-3 select-none"># {t.agentPreview}</div>
-                      {matchedSolution.cliMock && matchedSolution.cliMock.split('\n').map((line, i) => (
-                        <div key={i} className={
-                          line.startsWith('[ERROR]') ? 'text-red-400 font-bold' : 
-                          line.startsWith('[SUCCESS]') || line.startsWith('[INFO]') ? 'text-emerald-400 font-bold' : 
-                          line.startsWith('$') || line.startsWith('`$') ? 'text-blue-300' : 
-                          'text-slate-300'
-                        }>
-                          {line}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700 text-center shadow-inner">
-                      <p className="text-base font-bold mb-2 text-slate-800 dark:text-white">{t.agentApproveReq}</p>
-                      <p className="text-sm mb-6 text-slate-500 dark:text-slate-400">{t.agentApproveDesc}</p>
                       
-                      {executionStatus === 'idle' && (
-                        <button 
-                          onClick={() => { setExecutionStatus('running'); setTimeout(() => setExecutionStatus('success'), 2500); }}
-                          className="w-full md:w-auto mx-auto flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-95"
-                        >
-                          <PlayCircle className="w-5 h-5" /> <span>{t.agentExecuteBtn}</span>
-                        </button>
-                      )}
-                      
-                      {executionStatus === 'running' && (
-                        <div className="w-full md:w-auto mx-auto flex items-center justify-center space-x-3 text-emerald-600 dark:text-emerald-400 px-8 py-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/30">
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          <span className="font-bold">{t.agentExecuting}</span>
-                        </div>
-                      )}
+                      <div className="bg-[#0f172a] p-5 rounded-xl border border-slate-800 text-white font-mono text-sm overflow-x-auto whitespace-pre leading-relaxed mb-6 shadow-inner">
+                        <div className="text-slate-500 mb-3 select-none"># {t.agentPreview}</div>
+                        {matchedSolution.cliMock && matchedSolution.cliMock.split('\n').map((line, i) => (
+                          <div key={i} className={
+                            line.startsWith('[ERROR]') ? 'text-red-400 font-bold' : 
+                            line.startsWith('[SUCCESS]') || line.startsWith('[INFO]') ? 'text-emerald-400 font-bold' : 
+                            line.startsWith('$') || line.startsWith('`$') ? 'text-blue-300' : 
+                            'text-slate-300'
+                          }>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
 
-                      {executionStatus === 'success' && (
-                        <div className="w-full md:w-auto mx-auto flex items-center justify-center space-x-2 text-emerald-800 dark:text-emerald-100 px-8 py-4 bg-emerald-100 dark:bg-emerald-600 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-500 animate-in zoom-in-95">
-                          <CheckCircle className="w-6 h-6" />
-                          <span className="font-bold text-lg">{t.agentSuccess}</span>
-                        </div>
-                      )}
+                      <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700 text-center shadow-inner">
+                        <p className="text-base font-bold mb-2 text-slate-800 dark:text-white">{t.agentApproveReq}</p>
+                        <p className="text-sm mb-6 text-slate-500 dark:text-slate-400">{t.agentApproveDesc}</p>
+                        
+                        {/* 🛡️ [수정됨] 권한(userRole) 및 토글(isAdmin) 체크 로직 적용 */}
+                        {executionStatus === 'idle' && (
+                          <button 
+                            onClick={() => { setExecutionStatus('running'); setTimeout(() => setExecutionStatus('success'), 2500); }}
+                            disabled={userRole !== 'ADMIN' || !isAdmin}
+                            className={`w-full md:w-auto mx-auto flex items-center justify-center space-x-2 px-8 py-4 rounded-xl font-bold transition-all
+                              ${userRole === 'ADMIN' && isAdmin 
+                                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-95' 
+                                : 'bg-slate-200 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed'
+                              }
+                            `}
+                          >
+                            {userRole === 'ADMIN' && isAdmin ? <PlayCircle className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                            <span>{userRole === 'ADMIN' && isAdmin ? t.agentExecuteBtn : t.unauthorizedBtn}</span>
+                          </button>
+                        )}
+                        
+                        {executionStatus === 'running' && (
+                          <div className="w-full md:w-auto mx-auto flex items-center justify-center space-x-3 text-emerald-600 dark:text-emerald-400 px-8 py-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl border border-emerald-200 dark:border-emerald-500/30">
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span className="font-bold">{t.agentExecuting}</span>
+                          </div>
+                        )}
+
+                        {executionStatus === 'success' && (
+                          <div className="w-full md:w-auto mx-auto flex items-center justify-center space-x-2 text-emerald-800 dark:text-emerald-100 px-8 py-4 bg-emerald-100 dark:bg-emerald-600 rounded-xl shadow-lg border border-emerald-200 dark:border-emerald-500 animate-in zoom-in-95">
+                            <CheckCircle className="w-6 h-6" />
+                            <span className="font-bold text-lg">{t.agentSuccess}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
