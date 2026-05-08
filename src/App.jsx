@@ -994,16 +994,10 @@ export default function App() {
     const todayTokens = tokenHistory[todayStr] || 0;
     if (todayTokens > 50000) throw new Error("오늘의 API 무료 사용량 한도(50,000 Token)를 초과했습니다. 관리자에게 문의하세요.");
 
-    let apiKey = geminiKey.trim();
-    try {
-      if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) {
-        apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      }
-    } catch (e) {}
-    
+    const apiKey = geminiKey.trim();
     if (!apiKey) throw new Error(t.apiKeyMissingError);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+    const url = `api/gemini.js`;
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -1011,7 +1005,7 @@ export default function App() {
           method: 'POST', 
           headers: { 
             'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey 
+            
           }, 
           body: JSON.stringify(payload) 
         });
@@ -1093,8 +1087,7 @@ export default function App() {
 
     wakeUpSpeechEngine();
 
-    let hasKey = geminiKey.trim() !== "";
-    try { if (!hasKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) hasKey = true; } catch(e){}
+    const hasKey = geminiKey.trim() !== "";
     if (!hasKey) {
       alert(t.apiKeyMissingAlert);
       return;
@@ -1314,9 +1307,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     }
 
     // 2. KB에 없는 알 수 없는 에러 로그는 Gemini API 동적 호출
-    let apiKey = geminiKey.trim();
-    try { if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY) apiKey = import.meta.env.VITE_GEMINI_API_KEY; } catch(e){}
-    
+    const apiKey = geminiKey.trim();
     if (!apiKey) {
       alert(t.unknownLogError);
       setAnalyzing(false);
