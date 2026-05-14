@@ -1060,12 +1060,6 @@ export default function App() {
 
     wakeUpSpeechEngine();
 
-    const hasKey = geminiKey.trim() !== "";
-    if (!hasKey) {
-      alert(t.apiKeyMissingAlert);
-      return;
-    }
-
     setInput('');
     currentInputRef.current = ''; 
     const userMsgId = Date.now().toString() + "-u";
