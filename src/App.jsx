@@ -767,31 +767,7 @@ export default function App() {
       return kbData[lang].find(item => item.id === prev.id) || prev;
     });
   }, [lang]);
-
-  // 🛡️ 세션 기반 키 관리
-  const [geminiKey, setGeminiKey] = useState(() => {
-    if (typeof window !== 'undefined') return sessionStorage.getItem('gemini_api_key') || '';
-    return '';
-  });
-  const [isKeySaved, setIsKeySaved] = useState(() => {
-    if (typeof window !== 'undefined') return !!sessionStorage.getItem('gemini_api_key');
-    return false;
-  });
-
-  const handleKeyChange = (e) => setGeminiKey(e.target.value);
-
-  const handleSaveKey = () => {
-    if (!geminiKey.trim()) return;
-    if (typeof window !== 'undefined') sessionStorage.setItem('gemini_api_key', geminiKey.trim());
-    setIsKeySaved(true);
-  };
-
-  const handleResetKey = () => {
-    setIsKeySaved(false);
-    setGeminiKey('');
-    if (typeof window !== 'undefined') sessionStorage.removeItem('gemini_api_key');
-  };
-  
+    
   useEffect(() => {
     if (theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
