@@ -1446,36 +1446,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                   <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
                </h2>
              </div>
-             {!isKeySaved ? (
-               <div className="flex gap-2">
-                 <input
-                    type="password"
-                    value={geminiKey}
-                    onChange={handleKeyChange}
-                    placeholder={t.apiKeyPlaceholder}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 shadow-sm transition-all"
-                 />
-                 <button
-                    onClick={handleSaveKey}
-                    className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500"
-                 >
-                    {t.saveBtn}
-                 </button>
-               </div>
-             ) : (
-               <div className="flex items-center justify-between bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg">
-                 <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                   <CheckCircle className="w-4 h-4" /> {t.apiKeyLinked}
-                 </span>
-                 <button
-                   onClick={handleResetKey}
-                   className="text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white underline underline-offset-2 transition-colors"
-                 >
-                   {t.resetBtn}
-                 </button>
-               </div>
-             )}
-
+            
              {/* 🛡️ [수정됨] 관리자 권한 (RBAC) 토글 - ADMIN이 아니면 아예 숨김 처리 */}
              {userRole === 'ADMIN' && (
                <div className="mt-3 flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg shadow-sm animate-in fade-in zoom-in duration-200">
