@@ -1274,13 +1274,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     }
 
     // 2. KB에 없는 알 수 없는 에러 로그는 Gemini API 동적 호출
-    const apiKey = geminiKey.trim();
-    if (!apiKey) {
-      alert(t.unknownLogError);
-      setAnalyzing(false);
-      return;
-    }
-
+    
     const systemInstruction = `당신은 클라우드/인프라 최고 등급(L3) 장애 해결 에이전트입니다.
 제공된 에러 로그를 분석하여 반드시 아래 JSON 형식으로만 응답하세요. 다른 설명은 추가하지 마세요.
 {
