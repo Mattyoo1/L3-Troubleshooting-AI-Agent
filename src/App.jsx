@@ -970,7 +970,7 @@ export default function App() {
     const todayTokens = tokenHistory[todayStr] || 0;
     if (todayTokens > 50000) throw new Error("오늘의 API 무료 사용량 한도(50,000 Token)를 초과했습니다. 관리자에게 문의하세요.");
 
-    const url = `api/gemini.js`;
+    const url = `\api\gemini.js`;
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
