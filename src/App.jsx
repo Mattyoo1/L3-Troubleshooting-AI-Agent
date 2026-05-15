@@ -970,7 +970,7 @@ export default function App() {
     const todayTokens = tokenHistory[todayStr] || 0;
     if (todayTokens > 50000) throw new Error("오늘의 API 무료 사용량 한도(50,000 Token)를 초과했습니다. 관리자에게 문의하세요.");
 
-    const url = `\api\gemini.js`;
+    const url = `/api/gemini.js`;
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -1439,6 +1439,10 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         </div>
 
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
+
+             {/* 🛡️ [수정됨] 관리자 권한 (RBAC) 토글 - ADMIN이 아니면 아예 숨김 처리 */}
+             {userRole === 'ADMIN' && (
+
           
           <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
              <div className="flex items-center justify-between mb-2">
@@ -1447,8 +1451,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                </h2>
              </div>
             
-             {/* 🛡️ [수정됨] 관리자 권한 (RBAC) 토글 - ADMIN이 아니면 아예 숨김 처리 */}
-             {userRole === 'ADMIN' && (
+             
                <div className="mt-3 flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg shadow-sm animate-in fade-in zoom-in duration-200">
                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                    <ShieldAlert className="w-3.5 h-3.5" /> {t.adminMode}
