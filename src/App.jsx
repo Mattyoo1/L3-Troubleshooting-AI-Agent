@@ -1287,7 +1287,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 }`;
 
     try {
-      const response = await fetch(`/api/gemini`, {
+      const response = await fetch(`/api/gemini.js`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json'},
         body: JSON.stringify({
