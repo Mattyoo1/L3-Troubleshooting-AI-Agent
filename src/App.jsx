@@ -1329,7 +1329,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     } finally {
       setAnalyzing(false);
     }
-  }, [logInput, lang, geminiKey, t]);
+  }, [logInput, lang, t]);
 
   // === [신규 기능] 파일 다운로드 유틸리티 (XSS 방어) ===
   const downloadFile = useCallback((filename, content) => {
