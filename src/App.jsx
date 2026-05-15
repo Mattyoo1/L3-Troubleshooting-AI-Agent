@@ -1443,7 +1443,7 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
           <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
              <div className="flex items-center justify-between mb-2">
                <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2">
-                  <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
+                  <Key className="w-3.5 h-3.5" /> 
                </h2>
              </div>
             
