@@ -1,10 +1,9 @@
 // ============================================================
-// 📁 파일 경로: /api/openai.js  ← 신규 추가 파일
-// Vercel Serverless Function — OpenAI API 서버-to-서버 프록시
-//
-// ✅ Vercel 서버 경유이므로 브라우저 CORS 문제 없음
-// ✅ userApiKey를 Authorization Bearer 헤더로 전달
+// 📁 파일 경로: /api/openai.js
+// Vercel Serverless Function — OpenAI 프록시 + 서버사이드 토큰 제한
 // ============================================================
+ 
+import { kv } from '@vercel/kv';
  
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_SITE_URL,
@@ -13,16 +12,23 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
 ].filter(Boolean);
  
-// ✅ FinOps 최적화: 저비용 모델 우선 허용
 const ALLOWED_MODELS = [
-  'gpt-4o-mini',    // 추천 · 저비용 · 안정적
-  'gpt-4.1-nano',   // 최저비용
-  'gpt-4.1-mini',   // 저비용
-  'gpt-4o',         // 고성능
-  'gpt-4.1',        // 고성능
+  'gpt-4o-mini',
+  'gpt-4.1-nano',
+  'gpt-4.1-mini',
+  'gpt-4o',
+  'gpt-4.1',
 ];
  
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const SERVER_DAILY_LIMIT = 50000;
+const KEY_EXPIRY_SECONDS = 48 * 3600;
+ 
+function getClientIP(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return req.socket?.remoteAddress || 'unknown';
+}
  
 export default async function handler(req, res) {
   const origin = req.headers.origin || '';
@@ -34,6 +40,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
+  res.setHeader('Cache-Control', 'no-store');
  
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
@@ -41,7 +48,6 @@ export default async function handler(req, res) {
  
   const { userApiKey, model, messages, systemPrompt, isJsonMode } = req.body || {};
  
-  // ✅ OpenAI API Key 형식 검증 (sk- 또는 sk-proj- 접두사)
   if (!userApiKey || typeof userApiKey !== 'string') {
     return res.status(400).json({ error: 'API Key is required' });
   }
@@ -59,7 +65,24 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
  
-  // OpenAI 메시지 형식 구성
+  // ✅ 서버사이드 토큰 한도 검증
+  const ip = getClientIP(req);
+  const today = new Date().toISOString().split('T')[0];
+  const usageKey = `tokens:${ip}:${today}`;
+ 
+  try {
+    const currentUsage = (await kv.get(usageKey)) || 0;
+    if (currentUsage >= SERVER_DAILY_LIMIT) {
+      return res.status(429).json({
+        error: `Daily token limit (${SERVER_DAILY_LIMIT.toLocaleString()}) exceeded. Please try again tomorrow.`,
+        usage: currentUsage,
+        limit: SERVER_DAILY_LIMIT,
+      });
+    }
+  } catch {
+    // KV 미설정 시 생략
+  }
+ 
   const openaiMessages = [];
   if (systemPrompt) {
     openaiMessages.push({ role: 'system', content: String(systemPrompt) });
@@ -71,11 +94,7 @@ export default async function handler(req, res) {
     });
   });
  
-  const payload = {
-    model: selectedModel,
-    messages: openaiMessages,
-    max_tokens: 4096,
-  };
+  const payload = { model: selectedModel, messages: openaiMessages, max_tokens: 4096 };
   if (isJsonMode) {
     payload.response_format = { type: 'json_object' };
   }
@@ -101,13 +120,24 @@ export default async function handler(req, res) {
     }
  
     const data = await response.json();
+    const tokensUsed = data?.usage?.total_tokens || 0;
+ 
+    // ✅ 사용량 서버사이드 기록
+    try {
+      if (tokensUsed > 0) {
+        await kv.incrby(usageKey, tokensUsed);
+        await kv.expire(usageKey, KEY_EXPIRY_SECONDS);
+      }
+    } catch {
+      // KV 미설정 시 무시
+    }
  
     return res.status(200).json({
       text: data?.choices?.[0]?.message?.content || '',
       usage: {
         input: data?.usage?.prompt_tokens || 0,
         output: data?.usage?.completion_tokens || 0,
-        total: data?.usage?.total_tokens || 0,
+        total: tokensUsed,
       },
     });
  
