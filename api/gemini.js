@@ -10,13 +10,14 @@ export default async function handler(req, res) {
   const origin = req.headers.origin;
   const allowedOrigin = process.env.NEXT_PUBLIC_SITE_URL || 'https://myit-ai-agent.vercel.app'; // 로컬 테스트시는 주석처리
   
-  // 3. 페이로드 파싱
-  const { contents, systemInstruction } = req.body;
+  // 3. 페이로드 파싱 (사용자 키 추출)
+  // 프론트에서 넘어온 userApiKey를 분리하고, 나머지는 payload에 담습니다.
+  const { userApiKey, ...geminiPayload } = req.body;
 
-  // 4. Vercel 환경변수에서 API Key 가져오기 (절대 클라이언트에 노출 안 됨!)
-  const apiKey = process.env.GEMINI_API_KEY;
+  // 4. 사용자가 입력한 API Key 사용 (BYOK)
+  const apiKey = userApiKey;
   if (!apiKey) {
-    return res.status(500).json({ error: '서버 환경변수에 API Key가 없습니다.' });
+    return res.status(400).json({ error: '사용자의 API Key가 제공되지 않았습니다.' });
   }
 
   try {
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ contents, systemInstruction }),
+      body: JSON.stringify(geminiPayload), // userApiKey가 제거된 순수 데이터만 전송
     });
 
     if (!response.ok) {
