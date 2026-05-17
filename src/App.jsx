@@ -1484,15 +1484,11 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
         </div>
 
         <div className="p-5 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
-
-             {/* 🛡️ [수정됨] 관리자 권한 (RBAC) 토글 - ADMIN이 아니면 아예 숨김 처리 */}
-             {userRole === 'ADMIN' && (
-
-          
+                  
           <div className="mb-6 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-4 rounded-xl">
              <div className="flex items-center justify-between mb-2">
                <h2 className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2">
-                  <Key className="w-3.5 h-3.5" /> 
+                  <Key className="w-3.5 h-3.5" /> {t.apiSettingTitle}
                </h2>
              </div>
 
@@ -1525,7 +1521,10 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                  </button>
                </div>
              )}
-             
+              
+              {/* 🛡️ [수정됨] 관리자 권한 (RBAC) 토글 - ADMIN이 아니면 아예 숨김 처리 */}
+              {userRole === 'ADMIN' && (
+            
                <div className="mt-3 flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg shadow-sm animate-in fade-in zoom-in duration-200">
                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                    <ShieldAlert className="w-3.5 h-3.5" /> {t.adminMode}
@@ -1535,9 +1534,9 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                    <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
                  </label>
                </div>
-             </div>
              )}
-
+          </div>
+            
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner mb-6">
             <h3 className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5 font-bold">
               <BarChart3 className="w-3.5 h-3.5" /> {t.statsTitle}
