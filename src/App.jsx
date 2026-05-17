@@ -759,7 +759,29 @@ export default function App() {
   // === [신규 추가] 관리자 권한 상태 (RBAC 모의) ===
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState('USER'); // 'USER' | 'ADMIN'
+  
+  // 🛡️ 세션 기반 키 관리 (BYOK 모델)
+  const [geminiKey, setGeminiKey] = useState(() => {
+    if (typeof window !== 'undefined') return sessionStorage.getItem('gemini_api_key') || '';
+    return '';
+  });
+  const [isKeySaved, setIsKeySaved] = useState(() => {
+    if (typeof window !== 'undefined') return !!sessionStorage.getItem('gemini_api_key');
+    return false;
+  });
 
+  const handleKeyChange = (e) => setGeminiKey(e.target.value);
+  const handleSaveKey = () => {
+    if (!geminiKey.trim()) return;
+    if (typeof window !== 'undefined') sessionStorage.setItem('gemini_api_key', geminiKey.trim());
+    setIsKeySaved(true);
+  };
+  const handleResetKey = () => {
+    setIsKeySaved(false);
+    setGeminiKey('');
+    if (typeof window !== 'undefined') sessionStorage.removeItem('gemini_api_key');
+  };
+  
   // 🛡️ [CRITICAL - 언어 동기화 로직 추가] 
   useEffect(() => {
     setMatchedSolution(prev => {
@@ -970,7 +992,10 @@ export default function App() {
     const todayTokens = tokenHistory[todayStr] || 0;
     if (todayTokens > 50000) throw new Error("오늘의 API 무료 사용량 한도(50,000 Token)를 초과했습니다. 관리자에게 문의하세요.");
 
-    const url = `/api/gemini.js`;
+    const apiKey = geminiKey.trim();
+    if (!apiKey) throw new Error(t.apiKeyMissingError);
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -978,7 +1003,7 @@ export default function App() {
           method: 'POST', 
           headers: { 
             'Content-Type': 'application/json',
-            
+            'x-goog-api-key': apiKey
           }, 
           body: JSON.stringify(payload) 
         });
@@ -1060,6 +1085,12 @@ export default function App() {
 
     wakeUpSpeechEngine();
 
+    const hasKey = geminiKey.trim() !== "";
+    if (!hasKey) {
+      alert(t.apiKeyMissingAlert);
+      return;
+    }
+    
     setInput('');
     currentInputRef.current = ''; 
     const userMsgId = Date.now().toString() + "-u";
@@ -1274,6 +1305,14 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
     }
 
     // 2. KB에 없는 알 수 없는 에러 로그는 Gemini API 동적 호출
+
+    // ✅ (추가) 사용자가 키를 입력했는지 확인하는 로직 부활
+         const apiKey = geminiKey.trim();
+         if (!apiKey) {
+           alert(t.unknownLogError);
+           setAnalyzing(false);
+           return;
+         }
     
     const systemInstruction = `당신은 클라우드/인프라 최고 등급(L3) 장애 해결 에이전트입니다.
 제공된 에러 로그를 분석하여 반드시 아래 JSON 형식으로만 응답하세요. 다른 설명은 추가하지 마세요.
@@ -1287,9 +1326,11 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 }`;
 
     try {
-      const response = await fetch(`/api/gemini.js`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json'},
+        headers: { 'Content-Type': 'application/json'
+                   'x-goog-api-key': apiKey
+                 },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: `언어: ${lang === 'ko' ? '한국어' : 'English'}\n\nError Log:\n${logInput}` }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -1450,7 +1491,36 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
                   <Key className="w-3.5 h-3.5" /> 
                </h2>
              </div>
-            
+
+            {!isKeySaved ? (
+               <div className="flex gap-2 mt-3">
+                 <input
+                    type="password"
+                    value={geminiKey}
+                    onChange={handleKeyChange}
+                    placeholder={t.apiKeyPlaceholder}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 shadow-sm transition-all"
+                 />
+                 <button
+                    onClick={handleSaveKey}
+                    className="shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500"
+                 >
+                    {t.saveBtn}
+                 </button>
+               </div>
+             ) : (
+               <div className="mt-3 flex items-center justify-between bg-emerald-100 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg animate-in fade-in zoom-in duration-200">
+                 <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                   <CheckCircle className="w-4 h-4" /> {t.apiKeyLinked}
+                 </span>
+                 <button
+                   onClick={handleResetKey}
+                   className="text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white underline underline-offset-2 transition-colors"
+                 >
+                   {t.resetBtn}
+                 </button>
+               </div>
+             )}
              
                <div className="mt-3 flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2.5 rounded-lg shadow-sm animate-in fade-in zoom-in duration-200">
                  <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
