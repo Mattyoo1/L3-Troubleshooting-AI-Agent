@@ -1,6 +1,8 @@
 {
-  "short_name": "My IT Agent",
-  "name": "My IT Agent",
+  "short_name": "IT Agent",
+  "name": "My IT Agent - Infra Troubleshooting",
+  "description": "인프라 트러블슈팅 AI 에이전트",
+  "lang": "ko",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -14,9 +16,15 @@
       "purpose": "any maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "theme_color": "#0B1120",
-  "background_color": "#0B1120"
+  "background_color": "#0B1120",
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
+  "prefer_related_applications": false
 }
-
