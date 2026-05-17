@@ -22,10 +22,6 @@
           "value": "Content-Type"
         },
         {
-          "key": "Access-Control-Max-Age",
-          "value": "86400"
-        },
-        {
           "key": "Cache-Control",
           "value": "no-store, no-cache, must-revalidate"
         },
@@ -55,16 +51,8 @@
           "value": "strict-origin-when-cross-origin"
         },
         {
-          "key": "Permissions-Policy",
-          "value": "camera=(), geolocation=(), payment=()"
-        },
-        {
           "key": "Strict-Transport-Security",
           "value": "max-age=31536000; includeSubDomains"
-        },
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://generativelanguage.googleapis.com https://api.openai.com https://api.anthropic.com; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self';"
         }
       ]
     }
