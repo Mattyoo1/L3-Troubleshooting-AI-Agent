@@ -1,9 +1,11 @@
 // ============================================================
 // 📁 파일 경로: /api/claude.js
-// Vercel Serverless Function — Claude 프록시 + 서버사이드 토큰 제한
+// Vercel Serverless Function — Anthropic Claude API 프록시
+//
+// ✅ @vercel/kv 없이 즉시 동작하는 클린 버전
+// ✅ Vercel 서버-to-서버 호출 → Claude CORS 문제 없음
+// 📌 Upstash Redis 연동 방법은 gemini.js 주석 참고
 // ============================================================
- 
-import { kv } from '@vercel/kv';
  
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_SITE_URL,
@@ -13,7 +15,7 @@ const ALLOWED_ORIGINS = [
 ].filter(Boolean);
  
 const ALLOWED_MODELS = [
-  'claude-haiku-4-5-20251001',
+  'claude-haiku-4-5-20251001',    // ⭐ 추천 · 저비용
   'claude-3-5-haiku-20241022',
   'claude-sonnet-4-6',
   'claude-opus-4-6',
@@ -21,14 +23,6 @@ const ALLOWED_MODELS = [
  
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const SERVER_DAILY_LIMIT = 50000;
-const KEY_EXPIRY_SECONDS = 48 * 3600;
- 
-function getClientIP(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (forwarded) return forwarded.split(',')[0].trim();
-  return req.socket?.remoteAddress || 'unknown';
-}
  
 export default async function handler(req, res) {
   const origin = req.headers.origin || '';
@@ -40,7 +34,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
  
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
@@ -65,25 +59,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
  
-  // ✅ 서버사이드 토큰 한도 검증
-  const ip = getClientIP(req);
-  const today = new Date().toISOString().split('T')[0];
-  const usageKey = `tokens:${ip}:${today}`;
- 
-  try {
-    const currentUsage = (await kv.get(usageKey)) || 0;
-    if (currentUsage >= SERVER_DAILY_LIMIT) {
-      return res.status(429).json({
-        error: `Daily token limit (${SERVER_DAILY_LIMIT.toLocaleString()}) exceeded. Please try again tomorrow.`,
-        usage: currentUsage,
-        limit: SERVER_DAILY_LIMIT,
-      });
-    }
-  } catch {
-    // KV 미설정 시 생략
-  }
- 
-  // Claude 메시지 형식 (연속 동일 role 병합)
+  // Claude: 연속된 동일 role 메시지 병합 처리
   const claudeMessages = [];
   let lastRole = null;
   for (const m of messages) {
@@ -97,14 +73,21 @@ export default async function handler(req, res) {
     }
   }
  
+  // Claude JSON mode: 네이티브 미지원 → system prompt 지시 추가
   let finalSystemPrompt = systemPrompt || '';
   if (isJsonMode) {
     finalSystemPrompt += (finalSystemPrompt ? '\n\n' : '') +
       'IMPORTANT: Respond with valid JSON only. No markdown, no explanation, no code fences. Just the raw JSON object.';
   }
  
-  const claudePayload = { model: selectedModel, max_tokens: 4096, messages: claudeMessages };
-  if (finalSystemPrompt) claudePayload.system = finalSystemPrompt;
+  const claudePayload = {
+    model: selectedModel,
+    max_tokens: 4096,
+    messages: claudeMessages,
+  };
+  if (finalSystemPrompt) {
+    claudePayload.system = finalSystemPrompt;
+  }
  
   try {
     const response = await fetch(ANTHROPIC_API_URL, {
@@ -128,26 +111,13 @@ export default async function handler(req, res) {
     }
  
     const data = await response.json();
-    const inputTokens = data?.usage?.input_tokens || 0;
-    const outputTokens = data?.usage?.output_tokens || 0;
-    const tokensUsed = inputTokens + outputTokens;
- 
-    // ✅ 사용량 서버사이드 기록
-    try {
-      if (tokensUsed > 0) {
-        await kv.incrby(usageKey, tokensUsed);
-        await kv.expire(usageKey, KEY_EXPIRY_SECONDS);
-      }
-    } catch {
-      // KV 미설정 시 무시
-    }
  
     return res.status(200).json({
       text: data?.content?.[0]?.text || '',
       usage: {
-        input: inputTokens,
-        output: outputTokens,
-        total: tokensUsed,
+        input: data?.usage?.input_tokens || 0,
+        output: data?.usage?.output_tokens || 0,
+        total: (data?.usage?.input_tokens || 0) + (data?.usage?.output_tokens || 0),
       },
     });
  
