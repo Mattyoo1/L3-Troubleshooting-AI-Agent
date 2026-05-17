@@ -995,7 +995,7 @@ export default function App() {
     const apiKey = geminiKey.trim();
     if (!apiKey) throw new Error(t.apiKeyMissingError);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+    const url = `/api/gemini`; // 프록시로 통신
     
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -1003,10 +1003,14 @@ export default function App() {
           method: 'POST', 
           headers: { 
             'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey
+            
           }, 
-          body: JSON.stringify(payload) 
+          body: JSON.stringify({
+            ...payload,          // 기존 메시지 페이로드
+            userApiKey: apiKey   // 백엔드에 몰래 전달할 유저의 키
+          }) 
         });
+        
         if (!response.ok) {
           if (response.status === 429 || response.status === 503) { await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt))); continue; }
           throw new Error(t.apiRequestFailed);
@@ -1326,15 +1330,15 @@ ${kbData[lang].map(m => `ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCau
 }`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`, {
+      const response = await fetch(`/api/gemini`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json'
-                   'x-goog-api-key': apiKey
-                 },
+        headers: { 'Content-Type': 'application/json' }, 
+          
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: `언어: ${lang === 'ko' ? '한국어' : 'English'}\n\nError Log:\n${logInput}` }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
-          generationConfig: { responseMimeType: "application/json" }
+          generationConfig: { responseMimeType: "application/json" },
+          userApiKey: apiKey // 백엔드에 전달할 유저의 키
         })
       });
 
