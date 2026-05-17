@@ -2,18 +2,24 @@
 // 📁 파일 경로: /api/gemini.js
 // Vercel Serverless Function — Gemini API 서버-to-서버 프록시
 //
-// ✅ 보안 수정 사항:
-//   1. API Key URL 파라미터 → x-goog-api-key 헤더 전달 (로그 노출 방지)
-//   2. Origin 화이트리스트 실제 검증 로직 추가 (기존: 선언만 하고 미사용)
-//   3. 모델명 화이트리스트 검증 (임의 모델 호출 차단)
-//   4. userApiKey 형식 정규식 검증 (Gemini 키 패턴)
-//   5. OPTIONS preflight 응답 처리 추가
-//   6. 에러 응답에서 내부 스택트레이스/상세정보 제거
-//   7. 응답 정규화: { text, usage } 형식으로 프론트 통일
+// ✅ 수정: @vercel/kv 제거 (deprecated + 미설정 시 함수 로드 실패 버그)
+//
+// 📌 서버사이드 토큰 제한 옵션 (Upstash Redis):
+//   1. npm install @upstash/redis
+//   2. Vercel Dashboard → Integrations → Upstash Redis 추가 (무료)
+//   3. 환경변수 자동 추가됨: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN
+//   4. 아래 주석 처리된 Redis 섹션 활성화
 // ============================================================
-
-import { kv } from '@vercel/kv';
-
+ 
+// ─── [선택사항] Upstash Redis (서버사이드 토큰 제한) ────────────────────
+// 설정 완료 후 아래 주석을 해제하세요
+//
+// import { Redis } from '@upstash/redis';
+// const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+//   ? new Redis({ url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN })
+//   : null;
+// ──────────────────────────────────────────────────────────────────────────
+ 
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_SITE_URL,
   'https://myit-ai-agent.vercel.app',
@@ -21,7 +27,6 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
 ].filter(Boolean);
  
-// ✅ 허용 모델 화이트리스트 (Gemini 1.x는 2025년 3월 EOS → 2.0+ 이상만 허용)
 const ALLOWED_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-pro',
@@ -30,16 +35,14 @@ const ALLOWED_MODELS = [
  
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const SERVER_DAILY_LIMIT = 50000;
-const KEY_EXPIRY_SECONDS = 48 * 3600;
-
+ 
 function getClientIP(req) {
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) return forwarded.split(',')[0].trim();
   return req.socket?.remoteAddress || 'unknown';
 }
-
+ 
 export default async function handler(req, res) {
-  // ✅ CORS Origin 검증
   const origin = req.headers.origin || '';
   const isAllowed = ALLOWED_ORIGINS.includes(origin) || origin === '';
  
@@ -49,24 +52,14 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
  
-  // ✅ OPTIONS preflight 처리
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
- 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
- 
-  if (!isAllowed) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+  if (!isAllowed) return res.status(403).json({ error: 'Forbidden' });
  
   const { userApiKey, model, messages, systemPrompt, isJsonMode } = req.body || {};
  
-  // ✅ API Key 존재 및 형식 검증 (AIza 접두사)
   if (!userApiKey || typeof userApiKey !== 'string') {
     return res.status(400).json({ error: 'API Key is required' });
   }
@@ -75,36 +68,29 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Invalid API Key format' });
   }
  
-  // ✅ 모델 화이트리스트 검증
   const selectedModel = (model || 'gemini-2.5-flash').trim();
   if (!ALLOWED_MODELS.includes(selectedModel)) {
     return res.status(400).json({ error: `Unsupported model: ${selectedModel}` });
   }
  
-  // ✅ messages 배열 검증
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'messages array is required' });
   }
-
-  // ✅ [서버사이드 토큰 한도 검증] — localStorage 우회 불가
-  const ip = getClientIP(req);
-  const today = new Date().toISOString().split('T')[0];
-  const usageKey = `tokens:${ip}:${today}`;
  
-  try {
-    const currentUsage = (await kv.get(usageKey)) || 0;
-    if (currentUsage >= SERVER_DAILY_LIMIT) {
-      return res.status(429).json({
-        error: `Daily token limit (${SERVER_DAILY_LIMIT.toLocaleString()}) exceeded. Please try again tomorrow.`,
-        usage: currentUsage,
-        limit: SERVER_DAILY_LIMIT,
-      });
-    }
-  } catch {
-    // KV 미설정 시 한도 검사 생략 (graceful degradation)
-  }
+  // ─── [선택사항] Upstash Redis 서버사이드 한도 체크 ─────────────────
+  // Upstash 설정 완료 후 아래 주석을 해제하세요
+  //
+  // if (redis) {
+  //   const ip = getClientIP(req);
+  //   const today = new Date().toISOString().split('T')[0];
+  //   const usageKey = `tokens:${ip}:${today}`;
+  //   const currentUsage = (await redis.get(usageKey)) || 0;
+  //   if (currentUsage >= SERVER_DAILY_LIMIT) {
+  //     return res.status(429).json({ error: 'Daily token limit exceeded. Try again tomorrow.' });
+  //   }
+  // }
+  // ──────────────────────────────────────────────────────────────────────
  
-  // Gemini API 페이로드 구성
   const contents = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: String(m.content || '') }],
@@ -119,9 +105,7 @@ export default async function handler(req, res) {
   }
  
   try {
-    // ✅ [핵심 보안 수정]
-    // 기존: ?key=${apiKey} → 서버 액세스 로그에 API Key 전체가 기록됨 (Critical 취약점)
-    // 변경: x-goog-api-key 헤더 → 로그에 기록되지 않음
+    // ✅ API Key → URL 파라미터 아닌 헤더로 전달 (서버 로그 노출 방지)
     const response = await fetch(
       `${GEMINI_API_BASE}/${selectedModel}:generateContent`,
       {
@@ -146,18 +130,17 @@ export default async function handler(req, res) {
  
     const data = await response.json();
     const tokensUsed = data?.usageMetadata?.totalTokenCount || 0;
-
-    // ✅ 응답 성공 후 사용량 증가 기록
-    try {
-      if (tokensUsed > 0) {
-        await kv.incrby(usageKey, tokensUsed);
-        await kv.expire(usageKey, KEY_EXPIRY_SECONDS);
-      }
-    } catch {
-      // KV 미설정 시 무시
-    }
-   
-    // ✅ 정규화된 응답 반환 (프론트엔드가 프로바이더 포맷 몰라도 됨)
+ 
+    // ─── [선택사항] Upstash 사용량 기록 ────────────────────────────────
+    // if (redis && tokensUsed > 0) {
+    //   const ip = getClientIP(req);
+    //   const today = new Date().toISOString().split('T')[0];
+    //   const usageKey = `tokens:${ip}:${today}`;
+    //   await redis.incrby(usageKey, tokensUsed);
+    //   await redis.expire(usageKey, 172800); // 48h
+    // }
+    // ──────────────────────────────────────────────────────────────────────
+ 
     return res.status(200).json({
       text: data?.candidates?.[0]?.content?.parts?.[0]?.text || '',
       usage: {
@@ -168,7 +151,6 @@ export default async function handler(req, res) {
     });
  
   } catch (error) {
-    // ✅ 민감 정보(키, 응답 본문) console.error 기록 금지
     console.error('[Gemini Proxy] Internal error occurred');
     return res.status(500).json({ error: 'Internal server error' });
   }
