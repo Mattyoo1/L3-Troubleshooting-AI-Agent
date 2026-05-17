@@ -1,12 +1,9 @@
-/ ============================================================
-// 📁 파일 경로: /api/claude.js  ← 신규 추가 파일
-// Vercel Serverless Function — Anthropic Claude API 프록시
-//
-// ✅ Claude API는 브라우저 직접 호출 시 CORS 제한이 있지만,
-//    Vercel Serverless Function을 통한 서버-to-서버 호출은 CORS 문제 없음
-//    → Edge Function 별도 설정 불필요, github push만으로 자동 배포 가능
-// ✅ 'anthropic-dangerous-direct-browser-access' 헤더 불필요 (서버 호출이므로)
 // ============================================================
+// 📁 파일 경로: /api/claude.js
+// Vercel Serverless Function — Claude 프록시 + 서버사이드 토큰 제한
+// ============================================================
+ 
+import { kv } from '@vercel/kv';
  
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_SITE_URL,
@@ -15,16 +12,23 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
 ].filter(Boolean);
  
-// ✅ FinOps 최적화: 저비용 모델 우선
 const ALLOWED_MODELS = [
-  'claude-haiku-4-5-20251001',   // 추천 · 최저비용
-  'claude-3-5-haiku-20241022',   // 저비용
-  'claude-sonnet-4-6',           // 고성능
-  'claude-opus-4-6',             // 최고성능 (고비용)
+  'claude-haiku-4-5-20251001',
+  'claude-3-5-haiku-20241022',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
 ];
  
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const SERVER_DAILY_LIMIT = 50000;
+const KEY_EXPIRY_SECONDS = 48 * 3600;
+ 
+function getClientIP(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return req.socket?.remoteAddress || 'unknown';
+}
  
 export default async function handler(req, res) {
   const origin = req.headers.origin || '';
@@ -36,6 +40,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
+  res.setHeader('Cache-Control', 'no-store');
  
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
@@ -43,7 +48,6 @@ export default async function handler(req, res) {
  
   const { userApiKey, model, messages, systemPrompt, isJsonMode } = req.body || {};
  
-  // ✅ Anthropic API Key 형식 검증 (sk-ant- 접두사)
   if (!userApiKey || typeof userApiKey !== 'string') {
     return res.status(400).json({ error: 'API Key is required' });
   }
@@ -61,8 +65,25 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
  
-  // ✅ Claude는 user/assistant 메시지가 번갈아 와야 함
-  // 연속된 동일 role 메시지 병합 처리
+  // ✅ 서버사이드 토큰 한도 검증
+  const ip = getClientIP(req);
+  const today = new Date().toISOString().split('T')[0];
+  const usageKey = `tokens:${ip}:${today}`;
+ 
+  try {
+    const currentUsage = (await kv.get(usageKey)) || 0;
+    if (currentUsage >= SERVER_DAILY_LIMIT) {
+      return res.status(429).json({
+        error: `Daily token limit (${SERVER_DAILY_LIMIT.toLocaleString()}) exceeded. Please try again tomorrow.`,
+        usage: currentUsage,
+        limit: SERVER_DAILY_LIMIT,
+      });
+    }
+  } catch {
+    // KV 미설정 시 생략
+  }
+ 
+  // Claude 메시지 형식 (연속 동일 role 병합)
   const claudeMessages = [];
   let lastRole = null;
   for (const m of messages) {
@@ -76,21 +97,14 @@ export default async function handler(req, res) {
     }
   }
  
-  // ✅ Claude JSON mode: 네이티브 미지원 → system prompt에 JSON 지시 추가
   let finalSystemPrompt = systemPrompt || '';
   if (isJsonMode) {
     finalSystemPrompt += (finalSystemPrompt ? '\n\n' : '') +
       'IMPORTANT: Respond with valid JSON only. No markdown, no explanation, no code fences. Just the raw JSON object.';
   }
  
-  const claudePayload = {
-    model: selectedModel,
-    max_tokens: 4096,
-    messages: claudeMessages,
-  };
-  if (finalSystemPrompt) {
-    claudePayload.system = finalSystemPrompt;
-  }
+  const claudePayload = { model: selectedModel, max_tokens: 4096, messages: claudeMessages };
+  if (finalSystemPrompt) claudePayload.system = finalSystemPrompt;
  
   try {
     const response = await fetch(ANTHROPIC_API_URL, {
@@ -99,7 +113,6 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'x-api-key': trimmedKey,
         'anthropic-version': ANTHROPIC_VERSION,
-        // ✅ 서버-to-서버 호출이므로 browser-access 헤더 불필요
       },
       body: JSON.stringify(claudePayload),
     });
@@ -115,13 +128,26 @@ export default async function handler(req, res) {
     }
  
     const data = await response.json();
+    const inputTokens = data?.usage?.input_tokens || 0;
+    const outputTokens = data?.usage?.output_tokens || 0;
+    const tokensUsed = inputTokens + outputTokens;
+ 
+    // ✅ 사용량 서버사이드 기록
+    try {
+      if (tokensUsed > 0) {
+        await kv.incrby(usageKey, tokensUsed);
+        await kv.expire(usageKey, KEY_EXPIRY_SECONDS);
+      }
+    } catch {
+      // KV 미설정 시 무시
+    }
  
     return res.status(200).json({
       text: data?.content?.[0]?.text || '',
       usage: {
-        input: data?.usage?.input_tokens || 0,
-        output: data?.usage?.output_tokens || 0,
-        total: (data?.usage?.input_tokens || 0) + (data?.usage?.output_tokens || 0),
+        input: inputTokens,
+        output: outputTokens,
+        total: tokensUsed,
       },
     });
  
