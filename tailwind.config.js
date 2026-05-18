@@ -5,6 +5,8 @@
 //    Vite 프로젝트는 package.json에 "type":"module" 설정 시
 //    require()를 사용할 수 없어 빌드 에러 발생
 //    → ESM 방식의 import animate from 'tailwindcss-animate' 사용
+// ✅ package.json "type": "module" → ESM 방식 사용 (require 불가)
+// ✅ npm install tailwindcss-animate --save-dev 설치 후 동작
 // ============================================================
  
 import animate from 'tailwindcss-animate';
@@ -21,7 +23,7 @@ export default {
   },
   plugins: [
     // ✅ animate-in, slide-in-from-*, zoom-in-*, fade-in 등 UI 애니메이션 지원
-    animate,
+    animate
   ],
 }
  
