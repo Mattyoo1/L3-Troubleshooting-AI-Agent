@@ -5,7 +5,16 @@
 // ✅ @vercel/kv 없이 즉시 동작하는 클린 버전
 // 📌 Upstash Redis 연동 방법은 gemini.js 주석 참고
 // ============================================================
- 
+
+// ─── [선택사항] Upstash Redis (서버사이드 토큰 제한) ────────────────────
+// 설정 완료 후 아래 주석을 해제하세요
+//
+import { Redis } from '@upstash/redis';
+const redis = (process.env.KV_REST_API_URL && process.env.KV_REST_TOKEN)
+  ? new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN })
+  : null;
+// ──────────────────────────────────────────────────────────────────────────
+
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_SITE_URL,
   'https://myit-ai-agent.vercel.app',
