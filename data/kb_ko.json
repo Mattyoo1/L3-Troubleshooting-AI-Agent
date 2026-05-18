@@ -1,0 +1,92 @@
+[
+  {
+    "id": "TS-LINUX-001",
+    "category": "OS / GUI",
+    "title": "Ubuntu 22.04 XRDP 블랙 스크린 및 Polkit 충돌",
+    "rootCause": "기본 Gnome 세션과 XRDP 간의 충돌 및 너무 엄격한 polkit 규칙으로 인해 콘솔 외부 사용자의 color managed device 생성이 차단됨.",
+    "resolution": "~/.xsession 파일에 'env -u SESSION_MANAGER -u DBUS_SESSION_BUS_ADDRESS gnome-session'을 작성하고, colord를 허용하는 사용자 지정 polkit .pkla 파일을 추가함.",
+    "cliMock": "[ERROR] xrdp_mm_process_login_response: login failed\n$ echo 'env -u SESSION_MANAGER -u DBUS_SESSION_BUS_ADDRESS gnome-session' > ~/.xsession\n$ sudo bash -c 'cat > /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla <<EOF\n[Allow Colord all Users]\nIdentity=unix-user:*\nAction=org.freedesktop.color-manager.create-device\nResultAny=no\nResultInactive=no\nResultActive=yes\nEOF'\n$ sudo systemctl restart xrdp\n[SUCCESS] RDP Session Established.",
+    "insight": "**[Ansible 자동화 스크립트 제안 (xrdp-fix.yml)]**\n```yaml\n- name: Fix XRDP Black Screen\n  hosts: ubuntu_servers\n  tasks:\n    - name: Configure .xsession\n      lineinfile:\n        path: ~/.xsession\n        line: 'env -u SESSION_MANAGER -u DBUS_SESSION_BUS_ADDRESS gnome-session'\n        create: yes\n```\n위와 같이 Ansible로 템플릿화하여 대규모 VDI 프로비저닝 시 휴먼 에러를 방지하세요."
+  },
+  {
+    "id": "TS-UBUNTU-002",
+    "category": "Cloud / Network",
+    "title": "엔터프라이즈 보안 FTP (vsftpd) Passive Mode & chroot 리팩토링",
+    "rootCause": "소켓 바인드 충돌(IPv4/IPv6), NAT에 의해 Active FTP가 차단됨, vsftpd chroot의 엄격한 보안 정책으로 인해 쓰기 가능한 루트 디렉토리가 차단됨.",
+    "resolution": "IPv6 비활성화, Passive Mode(포트 10000-10100) 활성화, 클라우드 ACG 구성, chroot 디렉토리 권한 분리(루트 550, 하위 750).",
+    "cliMock": "[ERROR] status=2/INVALIDARGUMENT\n[ERROR] 500 OOPS: cannot read config file\n$ sudo mv /etc/vsftpd.conf /etc/vsftpd.conf.bak\n$ sudo sed -i 's/listen_ipv6=YES/#listen_ipv6=YES/g' /etc/vsftpd.conf\n$ echo -e 'pasv_enable=YES\\npasv_min_port=10000\\npasv_max_port=10100' >> /etc/vsftpd.conf\n$ sudo chmod 550 /home/main/ftp && sudo chmod 750 /home/main/ftp/upload\n$ sudo systemctl restart vsftpd\n[SUCCESS] Passive Mode active and chroot security applied.",
+    "insight": "**[네트워크/보안 아키텍처 개선 제안]**\nFTP는 패킷이 평문으로 전송되므로, 향후 vsftpd 설정에 `ssl_enable=YES`를 추가하여 FTPS로 전환하거나, 포트 22를 활용하는 SFTP 전용 `Subsystem sftp internal-sftp -d /home/main/ftp` 구조로 일원화하는 것을 강력히 권장합니다."
+  },
+  {
+    "id": "TS-TOMCAT-003",
+    "category": "Storage / Middleware",
+    "title": "Tomcat 로그 스토리지 고갈 및 NAS 자동화 파이프라인",
+    "rootCause": "이중 로깅으로 인한 디스크 비대화. 기존 logrotate가 gzip -c를 사용해 로그를 강제 압축함. 'rm'으로 활성 로그 삭제 시 '고스트 파일'이 발생해 inode 반환이 안 됨.",
+    "resolution": "catalina.out을 안전하게 롤링하도록 copytruncate 적용. uncompressed 상태로 NAS에 'mv'하도록 postrotate 수정. +90일 압축, +180일 삭제 NAS Cron 구축.",
+    "cliMock": "[ERROR] Error 28: No space left on device\n$ df -h | grep /dev/sda1\n/dev/sda1       50G   50G     0  100% /\n$ cat /dev/null > /usr/local/tomcat/logs/catalina.out\n[INFO] Ghost File cleared. Disk space reclaimed.\n$ find /mnt/nas/tomcat_logs -name '*.log' -mtime +90 -exec gzip {} \\;\n$ find /mnt/nas/tomcat_logs -name '*.gz' -mtime +180 -delete\n[SUCCESS] NAS Lifecycle policies executed successfully.",
+    "insight": "**[Shell Script 고도화 제안 (nas_lifecycle.sh)]**\n```bash\n#!/bin/bash\nNAS_DIR=\"/mnt/nas/tomcat_logs\"\n# 3개월 초과 로그 압축\nfind $NAS_DIR -type f -name '*.log' -mtime +90 -print0 | xargs -0 -I{} gzip -9 {}\n# 6개월 초과 로그 삭제\nfind $NAS_DIR -type f -mtime +180 -delete\n```\n해당 스크립트를 Crontab에 등록하여 스토리지 100% Full 장애를 영구적으로 예방하세요."
+  },
+  {
+    "id": "TS-K8S-004",
+    "category": "Cloud / Kubernetes",
+    "title": "Kubespray K8s 배포: 네트워크 타임아웃 및 x509 PKI 인증 오류",
+    "rootCause": "ACG 방화벽 포트(2379, 6443, 10250) 차단됨. 자동 생성된 API 서버 인증서의 SAN 목록에 Public IP가 누락되어 외부 kubeconfig 접근 거부됨.",
+    "resolution": "ACG 포트 개방. 잘못된 인증서를 삭제하고 '--apiserver-cert-extra-sans' 옵션을 주어 kubeadm으로 재발급.",
+    "cliMock": "[ERROR] connection refused to 192.168.10.6:6443\n[ERROR] tls: failed to verify certificate: x509... not 223.130.134.7\n$ sudo rm -f /etc/kubernetes/pki/apiserver.*\n$ sudo kubeadm init phase certs apiserver --apiserver-cert-extra-sans 223.130.134.7\n[INFO] Generating new API server RSA key and x509 cert...\n$ sudo docker restart $(docker ps -q -f name=k8s_kube-apiserver)\n$ kubectl get nodes -o wide\n[SUCCESS] Kubeconfig connected securely via Public IP.",
+    "insight": "**[Kubernetes 인프라 보안 개선 제안]**\nKubespray 배포 시 `inventory/mycluster/group_vars/k8s_cluster/k8s-cluster.yml` 파일 내에 `supplementary_addresses_in_ssl_keys: [\"Public IP\"]` 항목을 미리 선언해 두면 인증서 재발급 수고를 덜 수 있습니다."
+  },
+  {
+    "id": "TS-NCP-005",
+    "category": "Cloud / IaC",
+    "title": "NCP Terraform VM Provisioning 실패 및 동적 데이터 소스 리팩토링",
+    "rootCause": "OS 이미지 및 스펙에 하드코딩된 정적 상품 코드를 사용하여 드리프트 발생. NCP API가 'terraform apply' 중 사용되지 않는 이미지 코드를 거부함.",
+    "resolution": "정규식을 사용하여 런타임에 가장 최신의 호환 가능한 스펙 코드를 동적으로 가져오는 'data' 소스 방식으로 리팩토링.",
+    "cliMock": "[ERROR] ncloud_server: Bad Request: InvalidServerImageProductCode\n$ vi server.tf\n[INFO] Changing hardcoded 'SVR0000000X' to dynamic data.ncloud_server_image.ubuntu24.id\n$ terraform plan\n[INFO] Plan: 2 to add, 0 to change, 0 to destroy.\n$ terraform apply -auto-approve\n[SUCCESS] VM Provisioned completely with idempotent infrastructure code.",
+    "insight": "**[Terraform 리팩토링 코드 팁 (server.tf)]**\n```hcl\ndata \"ncloud_server_image\" \"ubuntu\" {\n  filter {\n    name   = \"product_name\"\n    values = [\"ubuntu-24.04\"]\n    regex  = true\n  }\n}\n```\n클라우드 벤더의 API 코드는 수시로 변하므로, 항상 `data` 블록을 이용해 런타임에 최신 코드를 쿼리하는 것이 IaC의 핵심입니다."
+  },
+  {
+    "id": "TS-DB-006",
+    "category": "Database / HA",
+    "title": "MariaDB MHA 복제: Binlog 실패 및 시스템 테이블 초기화 버그",
+    "rootCause": "Legacy my.cnf params caused startup halts. Manual binary install bypassed system table creation, leaving 'mysql' DB empty and binlog engine failed.",
+    "resolution": "Removed deprecated thread_concurrency. Executed mysql_install_db manually to generate core dictionary. Enabled log-bin and exported master snapshot.",
+    "cliMock": "[ERROR] Error: Binlogging on server not active\n[Warning] 'THREAD_CONCURRENCY' is deprecated\n$ sudo sed -i '/thread_concurrency/s/^/#/' /etc/mysql/my.cnf\n$ sudo /usr/local/mysql/scripts/mysql_install_db --user=mysql --basedir=/usr/local/mysql\n[INFO] Installing MariaDB/MySQL system tables in '/usr/local/mysql/data' ... OK\n$ sudo systemctl restart mariadb\n$ mysqldump -u root -p --all-databases --master-data > all.sql\n[SUCCESS] Binlog active. Master data dump exported.",
+    "insight": "**[데이터베이스 아키텍처 조언]**\n바이너리 수동 설치 시 `mysql_install_db`가 누락되면 권한, 복제 관리 테이블이 생성되지 않아 치명적입니다. 배포 스크립트에 `if [ ! -d /usr/local/mysql/data/mysql ]; then ...` 방어 로직을 추가하세요."
+  },
+  {
+    "id": "TS-DB-007",
+    "category": "Database / HA",
+    "title": "MariaDB MHA 클러스터: 복제 에러 1593 및 소스 빌드",
+    "rootCause": "Slave daemon defaulted to server-id=1 causing an infinite loop block. Standard apt lacked full MHA dependencies for automated failover.",
+    "resolution": "server-id 충돌 수정 (Master=1, Slave1=2, Slave2=3). 소스에서 MHA Manager 컴파일 및 양방향 패스워드 없는 SSH 신뢰 구축.",
+    "cliMock": "[ERROR] Last_IO_Errno: 1593\n[ERROR] Fatal error: master and slave have equal MySQL server ids\n$ ssh root@db-slave-01\n$ sed -i 's/server-id=1/server-id=2/' /etc/mysql/my.cnf\n$ systemctl restart mariadb\n$ mysql -e \"STOP SLAVE; START SLAVE; SHOW SLAVE STATUS\\G\" | grep Running\n[INFO] Slave_IO_Running: Yes\n[INFO] Slave_SQL_Running: Yes\n[SUCCESS] Server ID collision resolved. Replication synced.",
+    "insight": "**[Ansible을 활용한 MHA 자동화 스크립트 (auto-failover.yml)]**\n```yaml\n- name: Deploy MHA Node Dependencies\n  apt:\n    name: ['libdbd-mysql-perl', 'libconfig-tiny-perl', 'liblog-dispatch-perl', 'libparallel-forkmanager-perl']\n    state: present\n```\n필수 의존성 패키지를 미리 정의하여 신속하게 Failover 클러스터를 확장할 수 있습니다."
+  },
+  {
+    "id": "TS-DB-008",
+    "category": "Database / Disaster Recovery",
+    "title": "MariaDB 시스템 DB 손상 복구 및 MHA SSH PAM 우회",
+    "rootCause": "Crash corrupted 'mysql' tablespace. SSH 'UsePAM yes' configuration enforced keyboard-interactive login, overriding RSA Key authentication for MHA.",
+    "resolution": "Wiped and rebuilt system DB. Used mysqld_safe --skip-grant-tables to restore admin users. Disabled UsePAM in sshd_config to allow MHA passwordless access.",
+    "cliMock": "[ERROR] OS error: 71, cannot find file /db/data/mysql\n[ERROR] Access Denied for user 'root'\n$ mysqld_safe --skip-grant-tables &\n[INFO] MariaDB started securely bypassing grant tables.\n$ mysql -e \"FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'newpwd';\"\n$ sed -i 's/^UsePAM yes/UsePAM no/' /etc/ssh/sshd_config\n$ systemctl restart sshd\n[SUCCESS] MHA Manager Passwordless SSH authentication successful.",
+    "insight": "**[L3 엔지니어의 보안 아키텍처 제안]**\n`UsePAM yes`는 `authorized_keys` RSA 인증을 PAM 플러그인으로 오버라이드합니다. 또한 `mysqld_safe`는 복구 중 백도어 역할을 하므로, 복구 완료 후 즉시 `kill -9`로 프로세스를 종료하고 정상 재시작하여 보안 취약점을 닫으세요."
+  },
+  {
+    "id": "TS-IDE-009",
+    "category": "DevOps / Tooling",
+    "title": "VS Code Remote-SSH 접속 실패 및 캐시 손상",
+    "rootCause": "Windows OpenSSH rejected the .pem key due to over-permissive ACLs. Remote VS Code server daemon was locked/corrupted from a terminated session.",
+    "resolution": "Disabled Windows ACL inheritance on the key (granting only user control). Executed 'rm -rf ~/.vscode-server' on the remote VM via secondary client to purge cache.",
+    "cliMock": "[ERROR] Permission denied (publickey).\n[ERROR] Bad owner or permissions on C:\\Users\\...\\.ssh\\config\n# Windows PowerShell (Client)\n> icacls mykey.pem /inheritance:r\n> icacls mykey.pem /grant:r \"%USERNAME%:R\" /remove \"Authenticated Users\" /remove \"BUILTIN\\Administrators\"\n# Ubuntu Remote (Server)\n$ rm -rf ~/.vscode-server\n[SUCCESS] Corrupted daemon cache cleared. Remote-SSH connection established.",
+    "insight": "**[VS Code 원격 개발 환경 최적화 팁]**\n윈도우에서 리눅스로 접근할 때 `.pem` 키의 권한(ACL)이 열려있으면 연결을 차단합니다. 리눅스의 `chmod 400`과 동일하게 파일 속성에서 '상속 해제' 후 본인 계정만 남기면 깔끔하게 해결됩니다."
+  },
+  {
+    "id": "TS-WEB-010",
+    "category": "Middleware / Web-WAS",
+    "title": "Apache2 & Tomcat 9 Integration Failure: AJP Security Mismatch",
+    "rootCause": "Tomcat 9.0.31 이상의 Ghostcat 패치로 인해 AJP가 기본 비활성화되고 secretRequired=\"true\"가 강제되어 mod_jk 요청이 거부됨.",
+    "resolution": "server.xml에서 AJP Connector를 활성화하고 address=\"0.0.0.0\" 및 secretRequired=\"false\"로 변경. Apache JkMount 설정 재확인.",
+    "cliMock": "[ERROR] 503 Service Unavailable\n[ERROR] ajp_connect_to_endpoint::jk_ajp_common.c (1064): failed to connect to Tomcat AJP\n$ vi /usr/local/tomcat/conf/server.xml\n[INFO] Uncommented AJP Connector and added address=\"0.0.0.0\" secretRequired=\"false\"\n$ vi /etc/apache2/workers.properties\n$ systemctl restart tomcat9 apache2\n[SUCCESS] HTTP 200 OK. Apache successfully reverse-proxied to Tomcat via AJP.",
+    "insight": "**[Ghostcat (CVE-2020-1938) 보안 대응 가이드]**\n단순 연동을 위해 `secretRequired=\"false\"`를 적용하는 것은 편하지만, 실무에서는 `secretRequired=\"true\"`를 유지하고 `server.xml`과 `workers.properties` 양쪽에 시크릿 키를 부여하여 내부 AJP 통신의 스니핑을 방어하는 것이 스탠다드입니다."
+  }
+]
