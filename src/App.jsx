@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import kbKo from './data/kb_ko.json';
-import kbEn from './data/kb_en.json';
+import kbKo from "./data/kb_ko.json";
+import kbEn from "./data/kb_en.json";
 import {
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle,
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity,
