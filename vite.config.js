@@ -12,7 +12,22 @@
 //     로컬에서 그대로 테스트 가능 (프록시 설정 불필요)
 //   - npm run dev는 순수 프론트엔드만 테스트할 때 사용
 // ============================================================
- 
+
+// ============================================================
+// 📁 파일 경로: /vite.config.js
+//
+// ✅ 수정: manualChunks 제거 (Vercel Rollup 버전 충돌 에러 수정)
+//
+// 에러 원인:
+//   build.rollupOptions.manualChunks를 정적 객체로 지정하면
+//   Vercel의 Rollup 빌드 시 aggregateBindingErrorsIntoJsError 발생
+//   → vite.config.js:1:218 에러로 npm run build 실패
+//
+// 해결:
+//   manualChunks 제거 → Vite 기본 코드 스플리팅 사용
+//   (성능 차이 미미, 안정성 우선)
+// ============================================================
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
  
@@ -30,15 +45,15 @@ export default defineConfig({
       },
     },
   },
-  build: {
-    // ✅ 빌드 결과물 최적화
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'lucide': ['lucide-react'],
-        },
-      },
-    },
-  },
+  // build: {
+  //   // ✅ 빌드 결과물 최적화
+  //   rollupOptions: {
+  //     output: {
+  //       manualChunks: {
+  //         'react-vendor': ['react', 'react-dom'],
+  //         'lucide': ['lucide-react'],
+  //       },
+  //     },
+  //   },
+  // },
 })
