@@ -14,10 +14,10 @@
 // ─── [선택사항] Upstash Redis (서버사이드 토큰 제한) ────────────────────
 // 설정 완료 후 아래 주석을 해제하세요
 //
-// import { Redis } from '@upstash/redis';
-// const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
-//   ? new Redis({ url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN })
-//   : null;
+import { Redis } from '@upstash/redis';
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? new Redis({ url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN })
+  : null;
 // ──────────────────────────────────────────────────────────────────────────
  
 const ALLOWED_ORIGINS = [
