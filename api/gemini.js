@@ -15,8 +15,8 @@
 // 설정 완료 후 아래 주석을 해제하세요
 //
 import { Redis } from '@upstash/redis';
-const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
-  ? new Redis({ url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN })
+const redis = (process.env.KV_REST_API_URL && process.env.KV_REST_TOKEN)
+  ? new Redis({ url: process.env.KV_REST_API_URL, token: process.env.KV_REST_API_TOKEN })
   : null;
 // ──────────────────────────────────────────────────────────────────────────
  
