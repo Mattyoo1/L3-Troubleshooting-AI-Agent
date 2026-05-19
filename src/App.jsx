@@ -833,7 +833,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
   const currentModel = selectedModels[llmProvider];
   const currentModelInfo = MODEL_OPTIONS[llmProvider]?.find(m=>m.id===currentModel);
 
-  const providerBg = { gemini:'bg-blue-50 dark:bg-slate-800 border-blue-200 dark:border-blue-500', openai:'bg-emerald-50 dark:bg-slate-800 border-emerald-200 dark:border-emerald-500', claude:'bg-orange-50 dark:bg-slate-800 border-orange-200 dark:border-orange-500' };
+  const providerBg = { gemini:'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-500/30', openai:'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-500/30', claude:'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-500/30' };
   const providerText = { gemini:'text-blue-600 dark:text-blue-400', openai:'text-emerald-600 dark:text-emerald-400', claude:'text-orange-600 dark:text-orange-400' };
 
   return (
