@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import kbKo from "./data/kb_ko.json";
-import kbEn from "./data/kb_en.json";
 import {
   Terminal, BellRing, Cpu, PlayCircle, AlertCircle,
   MessageSquare, Mail, Smartphone, ShieldAlert, Activity,
@@ -9,17 +7,17 @@ import {
   Search, FileCode, Server, AlertTriangle, User, Lock, Eye, EyeOff,
   ChevronDown
 } from 'lucide-react';
- 
+
 // ─── 렌더링 파싱 에러 방어 ──────────────────────────────────────────────────
 const BQ  = String.fromCharCode(96);
 const TBQ = BQ + BQ + BQ;
- 
+
 // ════════════════════════════════════════════════════════════════════════════
 // ✅ [SECTION 1] 멀티-LLM 설정 (모델 선택 포함)
 // ════════════════════════════════════════════════════════════════════════════
- 
+
 const DAILY_TOKEN_LIMIT = 50000;
- 
+
 /**
  * MODEL_OPTIONS: 프로바이더별 선택 가능한 모델 목록
  * - FinOps 최적화: 저비용 모델을 기본값으로, 고성능 모델도 선택 가능
@@ -110,13 +108,13 @@ const MODEL_OPTIONS = {
     },
   ],
 };
- 
+
 const DEFAULT_MODELS = {
   gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   claude: 'claude-haiku-4-5-20251001',
 };
- 
+
 /**
  * PROVIDER_CONFIG: UI 표시 및 Key 검증 정보
  * - endpoint 제거: 프록시(/api/{provider}) 경유로 변경
@@ -155,11 +153,11 @@ const PROVIDER_CONFIG = {
     note: null,
   },
 };
- 
+
 // ════════════════════════════════════════════════════════════════════════════
 // ✅ [SECTION 2] 보안 유틸리티
 // ════════════════════════════════════════════════════════════════════════════
- 
+
 const validateApiKey = (key, provider) => {
   if (!key || typeof key !== 'string') return false;
   const t = key.trim();
@@ -168,197 +166,147 @@ const validateApiKey = (key, provider) => {
   if (t.length < cfg.minLen || t.length > cfg.maxLen) return false;
   return cfg.keyPattern.test(t);
 };
- 
+
 const maskApiKey = (key) => {
   if (!key || key.length <= 12) return '••••••••••••••••••••';
   return `${key.slice(0, 8)}${'•'.repeat(Math.min(key.length - 12, 20))}${key.slice(-4)}`;
 };
- 
+
 const safeStorage = {
   get:    (k) => { try { const v = localStorage.getItem(k); return v ? atob(v) : null; } catch { return null; } },
   set:    (k, v) => { try { localStorage.setItem(k, btoa(v)); return true; } catch { return false; } },
   remove: (k) => { try { localStorage.removeItem(k); return true; } catch { return false; } },
 };
- 
+
 const sanitizeErrorMsg = (msg) =>
   (msg || '')
     .replace(/AIza[A-Za-z0-9\-_.]{10,}/g, '[REDACTED]')
     .replace(/sk-[A-Za-z0-9\-_]{20,}/g, '[REDACTED]');
- 
-// ════════════════════════════════════════════════════════════════════════════
-// --- 사내 지식 베이스 (Troubleshooting Data - 다국어 지원) ---
 
-const kbData = { ko: kbKo, en: kbEn };
+// ════════════════════════════════════════════════════════════════════════════
+// KB 데이터 & 다국어 사전
+// ════════════════════════════════════════════════════════════════════════════
+const kbData = {
+  ko: [
+    { id: "TS-LINUX-001", category: "OS / GUI", title: "Ubuntu 22.04 XRDP 블랙 스크린 및 Polkit 충돌", rootCause: "기본 Gnome 세션과 XRDP 간의 충돌 및 너무 엄격한 polkit 규칙으로 인해 콘솔 외부 사용자의 color managed device 생성이 차단됨.", resolution: "~/.xsession 파일에 'env -u SESSION_MANAGER -u DBUS_SESSION_BUS_ADDRESS gnome-session'을 작성하고, colord를 허용하는 사용자 지정 polkit .pkla 파일을 추가함.", cliMock: "[ERROR] xrdp_mm_process_login_response: login failed\n$ echo 'env -u SESSION_MANAGER gnome-session' > ~/.xsession\n$ sudo systemctl restart xrdp\n[SUCCESS] RDP Session Established.", insight: "**[Ansible 자동화 (xrdp-fix.yml)]**\n" + TBQ + "yaml\n- name: Fix XRDP Black Screen\n  hosts: ubuntu_servers\n  tasks:\n    - lineinfile:\n        path: ~/.xsession\n        line: 'env -u SESSION_MANAGER -u DBUS_SESSION_BUS_ADDRESS gnome-session'\n        create: yes\n" + TBQ },
+    { id: "TS-UBUNTU-002", category: "Cloud / Network", title: "vsftpd Passive Mode & chroot 리팩토링", rootCause: "소켓 바인드 충돌(IPv4/IPv6), NAT에 의해 Active FTP 차단, vsftpd chroot 엄격 보안 정책.", resolution: "IPv6 비활성화, Passive Mode(10000-10100) 활성화, chroot 권한 분리(루트 550, 하위 750).", cliMock: "[ERROR] 500 OOPS: cannot read config file\n$ sudo sed -i 's/listen_ipv6=YES/#listen_ipv6=YES/g' /etc/vsftpd.conf\n$ echo 'pasv_enable=YES' >> /etc/vsftpd.conf\n$ sudo systemctl restart vsftpd\n[SUCCESS] Passive Mode active.", insight: "**[보안 권장]** FTPS 또는 SFTP 전환을 강력 권장합니다." },
+    { id: "TS-TOMCAT-003", category: "Storage / Middleware", title: "Tomcat 로그 스토리지 고갈 및 NAS 파이프라인", rootCause: "이중 로깅으로 디스크 비대화. rm으로 활성 로그 삭제 시 고스트 파일 발생해 inode 반환 안 됨.", resolution: "copytruncate 적용. +90일 gzip 압축, +180일 삭제 NAS Cron 구축.", cliMock: "[ERROR] Error 28: No space left on device\n$ cat /dev/null > /usr/local/tomcat/logs/catalina.out\n[INFO] Ghost File cleared.\n[SUCCESS] NAS Lifecycle executed.", insight: "**[Shell Script]**\n" + TBQ + "bash\n#!/bin/bash\nfind /mnt/nas -name '*.log' -mtime +90 -print0 | xargs -0 gzip -9\nfind /mnt/nas -mtime +180 -delete\n" + TBQ },
+    { id: "TS-K8S-004", category: "Cloud / Kubernetes", title: "Kubespray K8s: 네트워크 타임아웃 및 x509 인증 오류", rootCause: "ACG 방화벽 포트(2379, 6443, 10250) 차단. API 서버 인증서 SAN 목록에 Public IP 누락.", resolution: "ACG 포트 개방. --apiserver-cert-extra-sans 옵션으로 인증서 재발급.", cliMock: "[ERROR] x509: certificate not valid for Public IP\n$ sudo rm -f /etc/kubernetes/pki/apiserver.*\n$ sudo kubeadm init phase certs apiserver --apiserver-cert-extra-sans [IP]\n[SUCCESS] Kubeconfig connected.", insight: "**[팁]** Kubespray 배포 전 " + BQ + "supplementary_addresses_in_ssl_keys" + BQ + "를 미리 선언하세요." },
+    { id: "TS-NCP-005", category: "Cloud / IaC", title: "NCP Terraform VM Provisioning 실패", rootCause: "하드코딩된 정적 상품 코드로 드리프트 발생. NCP API가 deprecated 이미지 코드 거부.", resolution: "정규식으로 런타임에 최신 이미지 코드를 동적으로 가져오는 data 소스 리팩토링.", cliMock: "[ERROR] InvalidServerImageProductCode\n$ terraform plan && terraform apply -auto-approve\n[SUCCESS] VM Provisioned.", insight: "**[Terraform]**\n" + TBQ + "hcl\ndata \"ncloud_server_image\" \"ubuntu\" {\n  filter { name=\"product_name\"; values=[\"ubuntu-24.04\"]; regex=true }\n}\n" + TBQ },
+    { id: "TS-DB-006", category: "Database / HA", title: "MariaDB MHA 복제: Binlog 실패 & 시스템 테이블 초기화", rootCause: "Legacy my.cnf 파라미터로 시작 중단. 바이너리 설치 시 시스템 테이블 생성 누락.", resolution: "deprecated thread_concurrency 제거. mysql_install_db 수동 실행.", cliMock: "[ERROR] Binlogging on server not active\n$ sudo sed -i '/thread_concurrency/s/^/#/' /etc/mysql/my.cnf\n$ sudo /usr/local/mysql/scripts/mysql_install_db --user=mysql\n[SUCCESS] Binlog active.", insight: "배포 스크립트에 시스템 테이블 존재 여부 방어 로직을 추가하세요." },
+    { id: "TS-DB-007", category: "Database / HA", title: "MariaDB MHA 클러스터: 복제 에러 1593", rootCause: "Slave가 server-id=1로 기본 설정되어 무한루프 블록. apt에 MHA 의존성 누락.", resolution: "server-id 충돌 수정 (Master=1, Slave1=2, Slave2=3). 소스에서 MHA 컴파일.", cliMock: "[ERROR] Last_IO_Errno: 1593\n$ sed -i 's/server-id=1/server-id=2/' /etc/mysql/my.cnf\n$ mysql -e \"STOP SLAVE; START SLAVE;\"\n[SUCCESS] Replication synced.", insight: "**[Ansible]**\n" + TBQ + "yaml\n- apt:\n    name: ['libdbd-mysql-perl','libconfig-tiny-perl']\n    state: present\n" + TBQ },
+    { id: "TS-DB-008", category: "Database / Disaster Recovery", title: "MariaDB 시스템 DB 손상 복구 및 MHA SSH PAM 우회", rootCause: "크래시로 mysql 테이블스페이스 손상. UsePAM yes로 RSA Key 인증이 오버라이드.", resolution: "mysqld_safe --skip-grant-tables로 관리자 복구. UsePAM=no 변경.", cliMock: "[ERROR] cannot find /db/data/mysql\n$ mysqld_safe --skip-grant-tables &\n$ mysql -e \"FLUSH PRIVILEGES;\"\n$ sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config\n[SUCCESS] MHA SSH OK.", insight: "복구 완료 후 mysqld_safe 프로세스를 즉시 " + BQ + "kill -9" + BQ + "로 종료하세요." },
+    { id: "TS-IDE-009", category: "DevOps / Tooling", title: "VS Code Remote-SSH 접속 실패 및 캐시 손상", rootCause: "Windows OpenSSH가 ACL 과다 허용으로 .pem 키 거부. 원격 VS Code 데몬 잠김.", resolution: "키 파일 ACL 상속 비활성화. ~/.vscode-server 캐시 제거.", cliMock: "[ERROR] Permission denied (publickey)\n> icacls mykey.pem /inheritance:r\n$ rm -rf ~/.vscode-server\n[SUCCESS] Remote-SSH established.", insight: "파일 속성에서 상속 해제 후 본인 계정만 남기세요 (chmod 400 동일)." },
+    { id: "TS-WEB-010", category: "Middleware / Web-WAS", title: "Apache2 & Tomcat 9 AJP 보안 미스매치", rootCause: "Tomcat 9.0.31+ Ghostcat 패치로 AJP 기본 비활성화, secretRequired=true 강제.", resolution: "server.xml에서 AJP Connector 활성화, address=0.0.0.0, 시크릿 키 설정.", cliMock: "[ERROR] 503 Service Unavailable - failed to connect to Tomcat AJP\n$ systemctl restart tomcat9 apache2\n[SUCCESS] HTTP 200 OK.", insight: "실무에서는 " + BQ + "secretRequired=true" + BQ + " 유지 + 양쪽 동일 시크릿 키 설정이 표준입니다." },
+  ],
+  en: [
+    { id: "TS-LINUX-001", category: "OS / GUI", title: "Ubuntu 22.04 XRDP Black Screen & Polkit Crash", rootCause: "Gnome session conflict with XRDP and strict polkit rules blocking non-console users.", resolution: "Created ~/.xsession with env vars. Added custom polkit .pkla file for colord.", cliMock: "[ERROR] xrdp_mm_process_login_response: login failed\n$ echo 'env -u SESSION_MANAGER gnome-session' > ~/.xsession\n$ sudo systemctl restart xrdp\n[SUCCESS] RDP Session Established.", insight: "**[Ansible (xrdp-fix.yml)]**\n" + TBQ + "yaml\n- lineinfile:\n    path: ~/.xsession\n    line: 'env -u SESSION_MANAGER -u DBUS_SESSION_BUS_ADDRESS gnome-session'\n    create: yes\n" + TBQ },
+    { id: "TS-UBUNTU-002", category: "Cloud / Network", title: "vsftpd Passive Mode & chroot Refactoring", rootCause: "IPv4/IPv6 socket conflict, Active FTP blocked by NAT, strict chroot policy.", resolution: "Disabled IPv6, enabled Passive Mode (10000-10100), split chroot permissions.", cliMock: "[ERROR] 500 OOPS: cannot read config file\n$ sudo systemctl restart vsftpd\n[SUCCESS] Passive Mode active.", insight: "**[Security]** Strongly recommend migrating to FTPS or SFTP." },
+    { id: "TS-TOMCAT-003", category: "Storage / Middleware", title: "Tomcat Log Storage Exhaustion & NAS Pipeline", rootCause: "Dual-logging disk bloat. Ghost File inode retention on active log deletion.", resolution: "Applied copytruncate. Built NAS Cron: +90d gzip, +180d delete.", cliMock: "[ERROR] No space left on device\n$ cat /dev/null > /usr/local/tomcat/logs/catalina.out\n[SUCCESS] Space reclaimed.", insight: "**[Shell]**\n" + TBQ + "bash\nfind /mnt/nas -name '*.log' -mtime +90 -print0 | xargs -0 gzip -9\n" + TBQ },
+    { id: "TS-K8S-004", category: "Cloud / Kubernetes", title: "Kubespray K8s: Network Timeouts & x509 Cert Error", rootCause: "ACG blocked ports (2379/6443/10250). API server cert missing Public IP in SAN.", resolution: "Opened ACG ports. Regenerated cert with --apiserver-cert-extra-sans.", cliMock: "[ERROR] x509: certificate not valid for Public IP\n$ sudo kubeadm init phase certs apiserver --apiserver-cert-extra-sans [IP]\n[SUCCESS] Kubeconfig connected.", insight: "Pre-declare " + BQ + "supplementary_addresses_in_ssl_keys" + BQ + " in Kubespray config." },
+    { id: "TS-NCP-005", category: "Cloud / IaC", title: "NCP Terraform VM Provisioning Failure", rootCause: "Hardcoded static product codes caused drift. NCP API rejected deprecated image codes.", resolution: "Refactored to dynamic data sources using regex at runtime.", cliMock: "[ERROR] InvalidServerImageProductCode\n$ terraform apply -auto-approve\n[SUCCESS] VM Provisioned.", insight: "**[Terraform]**\n" + TBQ + "hcl\ndata \"ncloud_server_image\" \"ubuntu\" {\n  filter { name=\"product_name\"; values=[\"ubuntu-24.04\"]; regex=true }\n}\n" + TBQ },
+    { id: "TS-DB-006", category: "Database / HA", title: "MariaDB MHA Replication: Binlog Failure", rootCause: "Legacy my.cnf params halted startup. Binary install skipped system table creation.", resolution: "Removed deprecated params. Ran mysql_install_db to create system tables.", cliMock: "[ERROR] Binlogging on server not active\n$ sudo mysql_install_db --user=mysql\n[SUCCESS] Binlog active.", insight: "Add defensive check for system tables in your deployment scripts." },
+    { id: "TS-DB-007", category: "Database / HA", title: "MariaDB MHA Cluster: Replication Error 1593", rootCause: "Slave defaulted to server-id=1 causing infinite loop. apt lacked MHA deps.", resolution: "Fixed server-ids (Master=1, Slave1=2, Slave2=3). Compiled MHA from source.", cliMock: "[ERROR] Last_IO_Errno: 1593\n$ mysql -e \"STOP SLAVE; START SLAVE;\"\n[SUCCESS] Replication synced.", insight: "**[Ansible]**\n" + TBQ + "yaml\n- apt:\n    name: ['libdbd-mysql-perl','libconfig-tiny-perl']\n    state: present\n" + TBQ },
+    { id: "TS-DB-008", category: "Database / Disaster Recovery", title: "MariaDB System DB Corruption Recovery", rootCause: "Crash corrupted mysql tablespace. UsePAM yes overrode RSA key auth.", resolution: "Rebuilt system DB via mysqld_safe --skip-grant-tables. Set UsePAM no.", cliMock: "[ERROR] cannot find /db/data/mysql\n$ mysqld_safe --skip-grant-tables &\n$ sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config\n[SUCCESS] MHA SSH OK.", insight: "Kill mysqld_safe immediately after recovery to close the backdoor." },
+    { id: "TS-IDE-009", category: "DevOps / Tooling", title: "VS Code Remote-SSH Failure & Cache Corruption", rootCause: "Windows OpenSSH rejected .pem due to over-permissive ACLs. Daemon locked.", resolution: "Disabled ACL inheritance on key. Purged ~/.vscode-server cache.", cliMock: "[ERROR] Permission denied (publickey)\n> icacls mykey.pem /inheritance:r\n$ rm -rf ~/.vscode-server\n[SUCCESS] Remote-SSH established.", insight: "Disable ACL inheritance in Windows file properties (equiv to chmod 400)." },
+    { id: "TS-WEB-010", category: "Middleware / Web-WAS", title: "Apache2 & Tomcat 9 AJP Security Mismatch", rootCause: "Ghostcat patch disabled AJP by default and forced secretRequired=true.", resolution: "Enabled AJP Connector with proper secret configuration in server.xml.", cliMock: "[ERROR] 503 - failed to connect to Tomcat AJP\n$ systemctl restart tomcat9 apache2\n[SUCCESS] HTTP 200 OK.", insight: "Keep secretRequired=true with matching secrets in both server.xml and workers.properties." },
+  ],
+};
 
 const dict = {
   ko: {
-    title: "My IT Agent",
-    subtitle: "Infra Troubleshooting",
-    initMsg: "안녕하세요. 인프라 트러블슈팅 AI 에이전트입니다. 궁금한 점은 자유롭게 채팅에 남겨주세요.",
-    urgencyBtn: "🚨 긴급 장애 (Simulate)",
-    agenticBtn: "🔎 장애 로그 분석 에이전트",
-    agenticTitle: "긴급 로그 분석 워크플로우",
-    statsTitle: "KB 장애 통계",
-    finopsTitle: "FinOps 토큰 모니터링",
-    totalUsage: "총 사용량",
-    inputLabel: "입력 (Input)",
-    outputLabel: "출력 (Output)",
-    transKoLabel: "한글 (EN ➔ KO)",
-    transEnLabel: "영어 (KO ➔ EN)",
-    lastLabel: "Last:",
-    actionReq: "Action Required",
-    cliRun: "CLI 트러블슈팅 실행",
-    ongoingTitle: "진행 중인 장애 내역",
-    noOngoing: "현재 진행 중인 장애가 없습니다.",
-    sysAnal: "System Analysis",
-    agent: "AI Agent",
-    you: "You",
+    title: "My IT Agent", subtitle: "Infra Troubleshooting",
+    initMsg: "안녕하세요. 인프라 트러블슈팅 AI 에이전트입니다.\n좌측 사이드바에서 LLM 프로바이더와 API Key를 등록하면 AI 분석 기능을 사용할 수 있습니다.\nKB 기반 카테고리 조회는 API Key 없이 무료로 이용 가능합니다.",
+    urgencyBtn: "🚨 긴급 장애 (Simulate)", agenticBtn: "🔎 장애 로그 분석 에이전트",
+    agenticTitle: "긴급 로그 분석 워크플로우", statsTitle: "KB 장애 통계",
+    finopsTitle: "FinOps 토큰 모니터링", totalUsage: "총 사용량",
+    inputLabel: "입력", outputLabel: "출력",
+    lastLabel: "Last:", actionReq: "Action Required", cliRun: "CLI 트러블슈팅 실행",
+    ongoingTitle: "진행 중인 장애", noOngoing: "현재 진행 중인 장애가 없습니다.",
+    sysAnal: "System Analysis", agent: "AI Agent", you: "You",
     catHelp: "자주 발생하는 장애 카테고리",
     inputPlaceholder: "장애 증상이나 기술 질문을 자유롭게 입력하세요...",
     rcaGen: "원인(RCA) 분석 및 조치 방안 생성 중...",
-    simRcaMsg: "🚨 **[긴급 장애 감지 및 분석 완료]**\n장애 내역: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nCLI 트러블슈팅 실행 버튼을 클릭하여 복구를 진행하세요.",
-    cachedReply: "**[{title}]** 장애 내용에 대한 분석 및 조치 가이드입니다.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\n상세 터미널 로그 및 자동화 스크립트는 좌측의 **[CLI 트러블슈팅 실행]** 버튼을 클릭하여 확인하세요.",
-    cliContent: "복구 파이프라인 및 터미널 엑세스를 통해 조치를 시작합니다.\n\n" + TBQ + "bash\n{cliMock}\n" + TBQ + "\n\n{insight}",
-    cacheHit: "Last: 0 토큰 (Cache Hit - 비용 0원)",
-    apiHit: "Last: {tokens} 토큰 (API 호출)",
-    dailyTrend: "일별 사용 추이",
-    monthlyTrend: "월별 사용 추이",
-    dailyBtn: "일별",
-    monthlyBtn: "월별",
-    categories: {
-      "OS / GUI": "OS 장애",
-      "Cloud / Network": "네트워크 장애",
-      "Storage / Middleware": "스토리지 장애",
-      "Cloud / Kubernetes": "K8s 장애",
-      "Cloud / IaC": "IaC 장애",
-      "Database / HA": "DB 장애",
-      "Database / Disaster Recovery": "DB 장애",
-      "DevOps / Tooling": "DevOps 장애",
-      "Middleware / Web-WAS": "웹/미들웨어 장애"
-    },
-    apiSettingTitle: "Gemini API 설정",
-    apiKeyPlaceholder: "API Key 입력...",
-    saveBtn: "저장",
-    apiKeyLinked: "API Key 연동 완료",
-    resetBtn: "키 재설정",
-    apiKeyMissingError: "API Key가 설정되지 않았습니다. 좌측 메뉴에서 API Key를 입력 후 저장해주세요.",
-    apiKeyMissingAlert: "⚠️ 먼저 좌측 사이드바에 Gemini API Key를 입력 후 저장해주세요!",
+    simRcaMsg: "🚨 **[긴급 장애 감지]**\n장애: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nCLI 버튼을 클릭하여 복구를 진행하세요.",
+    cachedReply: "**[{title}]** 분석 가이드\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\n좌측 **[CLI 트러블슈팅 실행]** 버튼을 클릭하세요.",
+    cliContent: "복구 파이프라인 시작\n\n" + TBQ + "bash\n{cliMock}\n" + TBQ + "\n\n{insight}",
+    cacheHit: "Last: 0 토큰 (Cache Hit)", apiHit: "Last: {tokens} 토큰 (API 호출)",
+    dailyTrend: "일별 추이", monthlyTrend: "월별 추이", dailyBtn: "일별", monthlyBtn: "월별",
+    categories: { "OS / GUI":"OS 장애","Cloud / Network":"네트워크 장애","Storage / Middleware":"스토리지 장애","Cloud / Kubernetes":"K8s 장애","Cloud / IaC":"IaC 장애","Database / HA":"DB 장애","Database / Disaster Recovery":"DB 장애","DevOps / Tooling":"DevOps 장애","Middleware / Web-WAS":"웹/미들웨어" },
+    apiSettingTitle: "LLM 설정 (BYOK)",
+    modelLabel: "모델 선택",
+    saveBtn: "저장", apiKeyLinked: "연동 완료", resetBtn: "재설정",
+    apiKeyMissingError: "좌측 사이드바에서 API Key를 먼저 등록해주세요.",
+    apiKeyMissingAlert: "⚠️ API Key가 필요합니다. 좌측 사이드바에서 등록해주세요.",
+    apiKeyInvalidFormat: "유효하지 않은 API Key 형식입니다. 프로바이더별 키 형식을 확인해주세요.",
+    apiKeySaveError: "API Key 저장 중 오류가 발생했습니다.",
+    apiKeyStorageNotice: "Key는 브라우저에만 저장됩니다. Vercel 서버 로그에 기록되지 않습니다.",
+    apiKeyAuthError: "API Key가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해주세요.",
     clearChat: "대화 초기화",
     speechNotSupported: "이 브라우저는 음성 인식을 지원하지 않습니다.",
-    voiceMuteToggle: "음성 출력 토글",
-    listening: "듣고 있습니다...",
-    
-    agentLogDump: "에러 로그 덤프 (Error Log Dump)",
-    agentLogPlaceholder: "발생한 에러 로그, 알람 메시지를 붙여넣으세요...\n(예: xrdp_mm_process_login_response: login failed)",
-    agentAnalyzing: "AI 원인 분석 중...",
-    agentAnalyzeBtn: "분석 및 스크립트 생성",
-    agentRootCause: "원인",
-    agentResolution: "해결",
-    agentAutoScript: "자동화 복구 스크립트",
-    agentPreview: "예상되는 조치 사항 프리뷰",
-    agentApproveReq: "스크립트를 대상 서버에 푸시하시겠습니까?",
-    agentApproveDesc: "AWX Webhook 트리거를 통한 인프라 원격 복구 파이프라인",
-    agentExecuteBtn: "원클릭 원격 복구 승인",
-    agentExecuting: "인프라 복구 진행 중...",
-    agentSuccess: "조치 성공 (정상화 완료)",
-    backToChat: "채팅으로 돌아가기",
-    adminMode: "관리자 권한 (Admin Mode)",
-    unauthorizedBtn: "권한 없음 (Admin Only)",
-    chatLabel: "채팅 (Chat)",
-    agentLabel: "로그 분석 (Agent)",
-    shellDownload: "Shell 다운로드",
-    ansibleDownload: "Ansible 다운로드",
-    transTitle: "번역",
-    accessDenied: "접근 불가",
-    unknownLogError: "알려지지 않은 에러 로그입니다. AI 동적 분석을 위해 사이드바에서 Gemini API Key를 설정해주세요.",
-    apiRequestFailed: "API 요청에 실패했습니다.",
-    aiAnalysisError: "AI 분석 중 오류가 발생했습니다:"
+    voiceMuteToggle: "음성 출력 토글", listening: "듣고 있습니다...",
+    agentLogDump: "에러 로그 덤프",
+    agentLogPlaceholder: "에러 로그, 알람 메시지를 붙여넣으세요...",
+    agentAnalyzing: "AI 분석 중...", agentAnalyzeBtn: "분석 및 스크립트 생성",
+    agentRootCause: "원인", agentResolution: "해결", agentAutoScript: "자동화 복구 스크립트",
+    agentPreview: "조치 사항 프리뷰", agentApproveReq: "대상 서버에 스크립트를 푸시하시겠습니까?",
+    agentApproveDesc: "AWX Webhook 트리거를 통한 원격 복구 파이프라인",
+    agentExecuteBtn: "원클릭 원격 복구 승인", agentExecuting: "인프라 복구 진행 중...",
+    agentSuccess: "조치 성공 (정상화 완료)", backToChat: "채팅으로 돌아가기",
+    adminMode: "관리자 권한 (Admin Mode)", unauthorizedBtn: "권한 없음 (Admin Only)",
+    chatLabel: "채팅", agentLabel: "로그 분석",
+    shellDownload: "Shell 다운로드", ansibleDownload: "Ansible 다운로드", transTitle: "번역",
+    unknownLogError: "알 수 없는 로그입니다. AI 동적 분석을 위해 API Key를 등록해주세요.",
+    apiRequestFailed: "API 요청에 실패했습니다.", aiAnalysisError: "AI 분석 중 오류:",
   },
   en: {
-    title: "My IT Agent",
-    subtitle: "Infra Troubleshooting",
-    initMsg: "Hello. I am the Infra Troubleshooting AI Agent. Feel free to leave any questions in the chat.",
-    urgencyBtn: "🚨 Critical Alert (Simulate)",
-    agenticBtn: "🔎 Log Analysis Agent",
-    agenticTitle: "Agentic Auto-Remediation Workflow",
-    statsTitle: "KB Incident Stats",
-    finopsTitle: "FinOps Token Monitor",
-    totalUsage: "Total Usage",
-    inputLabel: "Input",
-    outputLabel: "Output",
-    transKoLabel: "Korean (EN ➔ KO)",
-    transEnLabel: "English (KO ➔ EN)",
-    lastLabel: "Last:",
-    actionReq: "Action Required",
-    cliRun: "Run CLI Troubleshooting",
-    ongoingTitle: "Ongoing Incidents",
-    noOngoing: "No ongoing incidents at the moment.",
-    sysAnal: "System Analysis",
-    agent: "AI Agent",
-    you: "You",
+    title: "My IT Agent", subtitle: "Infra Troubleshooting",
+    initMsg: "Hello, I'm the Infra Troubleshooting AI Agent.\nRegister your LLM provider & API Key in the left sidebar to enable AI features.\nKB-based category lookups are always free.",
+    urgencyBtn: "🚨 Critical Alert (Simulate)", agenticBtn: "🔎 Log Analysis Agent",
+    agenticTitle: "Agentic Auto-Remediation Workflow", statsTitle: "KB Incident Stats",
+    finopsTitle: "FinOps Token Monitor", totalUsage: "Total Usage",
+    inputLabel: "Input", outputLabel: "Output",
+    lastLabel: "Last:", actionReq: "Action Required", cliRun: "Run CLI Troubleshooting",
+    ongoingTitle: "Ongoing Incidents", noOngoing: "No ongoing incidents.",
+    sysAnal: "System Analysis", agent: "AI Agent", you: "You",
     catHelp: "Frequent Incident Categories",
     inputPlaceholder: "Describe incident symptoms or tech queries freely...",
     rcaGen: "Analyzing RCA & Generating Resolution...",
-    simRcaMsg: "🚨 **[Critical Incident Detected & RCA Complete]**\nIncident: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nPlease click the Run CLI Troubleshooting button to proceed with recovery.",
-    cachedReply: "Here is the analysis and resolution guide for **[{title}]**.\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\nPlease check the detailed terminal logs and automation scripts by clicking the **[Run CLI Troubleshooting]** button on the left.",
-    cliContent: "Initiating recovery through the pipeline and terminal access.\n\n" + TBQ + "bash\n{cliMock}\n" + TBQ + "\n\n{insight}",
-    cacheHit: "Last: 0 Tokens (Cache Hit - $0)",
-    apiHit: "Last: {tokens} Tokens (API Call)",
-    dailyTrend: "Daily Trend",
-    monthlyTrend: "Monthly Trend",
-    dailyBtn: "Daily",
-    monthlyBtn: "Monthly",
-    categories: {
-      "OS / GUI": "OS Issue",
-      "Cloud / Network": "Network Issue",
-      "Storage / Middleware": "Storage Issue",
-      "Cloud / Kubernetes": "K8s Issue",
-      "Cloud / IaC": "IaC Issue",
-      "Database / HA": "DB Issue",
-      "Database / Disaster Recovery": "DB Issue",
-      "DevOps / Tooling": "DevOps Issue",
-      "Middleware / Web-WAS": "Web/Middleware"
-    },
-    apiSettingTitle: "Gemini API Settings",
-    apiKeyPlaceholder: "Enter API Key...",
-    saveBtn: "Save",
-    apiKeyLinked: "API Key Linked",
-    resetBtn: "Reset Key",
-    apiKeyMissingError: "API Key is not set. Please enter and save your API Key in the left menu.",
-    apiKeyMissingAlert: "⚠️ Please enter and save your Gemini API Key in the left sidebar first!",
+    simRcaMsg: "🚨 **[Critical Incident Detected]**\nIncident: **{title}**\n\n<RCA>{rootCause}</RCA>\n\nClick the CLI button to proceed with recovery.",
+    cachedReply: "Analysis guide for **[{title}]**\n\n<RCA>{rootCause}</RCA>\n<RES>{resolution}</RES>\n\nClick **[Run CLI Troubleshooting]** on the left.",
+    cliContent: "Initiating recovery pipeline\n\n" + TBQ + "bash\n{cliMock}\n" + TBQ + "\n\n{insight}",
+    cacheHit: "Last: 0 Tokens (Cache Hit)", apiHit: "Last: {tokens} Tokens (API Call)",
+    dailyTrend: "Daily Trend", monthlyTrend: "Monthly Trend", dailyBtn: "Daily", monthlyBtn: "Monthly",
+    categories: { "OS / GUI":"OS Issue","Cloud / Network":"Network Issue","Storage / Middleware":"Storage Issue","Cloud / Kubernetes":"K8s Issue","Cloud / IaC":"IaC Issue","Database / HA":"DB Issue","Database / Disaster Recovery":"DB Issue","DevOps / Tooling":"DevOps Issue","Middleware / Web-WAS":"Web/Middleware" },
+    apiSettingTitle: "LLM Settings (BYOK)",
+    modelLabel: "Select Model",
+    saveBtn: "Save", apiKeyLinked: "Linked", resetBtn: "Reset",
+    apiKeyMissingError: "Please register your API Key in the left sidebar first.",
+    apiKeyMissingAlert: "⚠️ API Key required. Please register in the left sidebar.",
+    apiKeyInvalidFormat: "Invalid API Key format. Check the format for your provider.",
+    apiKeySaveError: "Error saving API Key.",
+    apiKeyStorageNotice: "Key stored locally only. Not logged by Vercel servers.",
+    apiKeyAuthError: "Invalid API Key or insufficient permissions. Please check your key.",
     clearChat: "Clear Chat",
-    speechNotSupported: "This browser does not support speech recognition.",
-    voiceMuteToggle: "Toggle Voice Output",
-    listening: "Listening...",
-    
+    speechNotSupported: "Speech recognition not supported in this browser.",
+    voiceMuteToggle: "Toggle Voice Output", listening: "Listening...",
     agentLogDump: "Error Log Dump",
-    agentLogPlaceholder: "Paste the error log or alert message here...\n(e.g., xrdp_mm_process_login_response: login failed)",
-    agentAnalyzing: "AI Analyzing RCA...",
-    agentAnalyzeBtn: "Analyze & Generate Script",
-    agentRootCause: "RCA",
-    agentResolution: "Fix",
-    agentAutoScript: "Automation Recovery Script",
-    agentPreview: "Action Preview",
-    agentApproveReq: "Push script to target servers?",
+    agentLogPlaceholder: "Paste the error log or alert message here...",
+    agentAnalyzing: "AI Analyzing...", agentAnalyzeBtn: "Analyze & Generate Script",
+    agentRootCause: "RCA", agentResolution: "Fix", agentAutoScript: "Automation Recovery Script",
+    agentPreview: "Action Preview", agentApproveReq: "Push script to target servers?",
     agentApproveDesc: "Remote recovery pipeline via AWX Webhook trigger",
-    agentExecuteBtn: "Approve One-Click Recovery",
-    agentExecuting: "Executing infrastructure recovery...",
-    agentSuccess: "Remediation Successful",
-    backToChat: "Back to Chat",
-    adminMode: "Admin Privilege Mode",
-    unauthorizedBtn: "Unauthorized (Admin Only)",
-    chatLabel: "Chat",
-    agentLabel: "Agent",
-    shellDownload: "Download Shell",
-    ansibleDownload: "Download Ansible",
-    transTitle: "Translate",
-    accessDenied: "Access Denied",
-    unknownLogError: "Unknown error log. Please set the Gemini API Key in the sidebar for dynamic AI analysis.",
-    apiRequestFailed: "API request failed.",
-    aiAnalysisError: "An error occurred during AI analysis:"
-  }
+    agentExecuteBtn: "Approve One-Click Recovery", agentExecuting: "Executing recovery...",
+    agentSuccess: "Remediation Successful", backToChat: "Back to Chat",
+    adminMode: "Admin Privilege Mode", unauthorizedBtn: "Unauthorized (Admin Only)",
+    chatLabel: "Chat", agentLabel: "Agent",
+    shellDownload: "Download Shell", ansibleDownload: "Download Ansible", transTitle: "Translate",
+    unknownLogError: "Unknown error log. Register an API Key for dynamic AI analysis.",
+    apiRequestFailed: "API request failed.", aiAnalysisError: "AI analysis error:",
+  },
 };
 
+// ════════════════════════════════════════════════════════════════════════════
 // 메시지 파싱 & 렌더링 컴포넌트
 // ════════════════════════════════════════════════════════════════════════════
 const parseMessageBlocks = (text) => {
@@ -379,7 +327,7 @@ const parseMessageBlocks = (text) => {
   if (lastIdx < text.length) blocks.push({ type: 'text', content: text.substring(lastIdx) });
   return blocks;
 };
- 
+
 const renderFormattedText = (text) => {
   if (!text) return null;
   return text.split(new RegExp(`(\\*\\*.*?\\*\\*|${BQ}.*?${BQ})`, 'g')).map((part, i) => {
@@ -388,7 +336,7 @@ const renderFormattedText = (text) => {
     return <span key={i}>{part}</span>;
   });
 };
- 
+
 const TextStream = ({ text, animate, onDone, scrollRef }) => {
   const [d, setD] = useState(animate ? '' : text);
   const fin = useRef(!animate);
@@ -400,7 +348,7 @@ const TextStream = ({ text, animate, onDone, scrollRef }) => {
   }, [animate, text, onDone, scrollRef]);
   return <div className="mb-3 leading-relaxed whitespace-pre-wrap text-slate-800 dark:text-slate-200">{renderFormattedText(d)}</div>;
 };
- 
+
 const RcaCard = ({ text, animate, onDone, scrollRef }) => {
   const [d, setD] = useState(animate ? '' : text);
   const fin = useRef(!animate);
@@ -412,7 +360,7 @@ const RcaCard = ({ text, animate, onDone, scrollRef }) => {
   }, [animate, text, onDone, scrollRef]);
   return <div className="bg-red-50 dark:bg-red-950/30 border-l-4 border-red-500 rounded-r-xl p-4 my-3 shadow-sm"><div className="flex items-center gap-2 mb-2 text-red-700 dark:text-red-400 font-bold text-xs uppercase tracking-wider"><AlertCircle className="w-3.5 h-3.5"/>Root Cause Analysis</div><div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">{renderFormattedText(d)}</div></div>;
 };
- 
+
 const ResCard = ({ text, animate, onDone, scrollRef }) => {
   const [d, setD] = useState(animate ? '' : text);
   const fin = useRef(!animate);
@@ -424,7 +372,7 @@ const ResCard = ({ text, animate, onDone, scrollRef }) => {
   }, [animate, text, onDone, scrollRef]);
   return <div className="bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-emerald-500 rounded-r-xl p-4 my-3 shadow-sm"><div className="flex items-center gap-2 mb-2 text-emerald-700 dark:text-emerald-400 font-bold text-xs uppercase tracking-wider"><CheckCircle className="w-3.5 h-3.5"/>Resolution</div><div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">{renderFormattedText(d)}</div></div>;
 };
- 
+
 const CLIStream = ({ code, animate, onDone, scrollRef }) => {
   const lines = code.trim().split('\n');
   const [vis, setVis] = useState(animate ? [] : lines);
@@ -445,7 +393,7 @@ const CLIStream = ({ code, animate, onDone, scrollRef }) => {
   };
   return <div className="bg-[#0c0c0c] text-slate-300 p-4 rounded-xl font-mono text-xs shadow-2xl border border-slate-700/80 my-3"><div className="flex gap-1.5 mb-3 border-b border-slate-800 pb-2.5 items-center"><div className="w-2.5 h-2.5 rounded-full bg-red-500"/><div className="w-2.5 h-2.5 rounded-full bg-yellow-500"/><div className="w-2.5 h-2.5 rounded-full bg-green-500"/><span className="text-slate-500 text-[10px] ml-2">root@l3-master:~</span></div><div className="space-y-1 break-all">{vis.map((l,i) => <div key={i} className="flex whitespace-pre-wrap">{rl(l)}</div>)}{animate&&vis.length<lines.length&&<div className="flex"><span className="text-indigo-400 mr-2">$</span><span className="w-2 h-3.5 bg-slate-400 animate-pulse"/></div>}</div></div>;
 };
- 
+
 const ScriptStream = ({ code, lang: sl, animate, onDone, scrollRef }) => {
   const lines = code.trim().split('\n');
   const [vis, setVis] = useState(animate ? [] : lines);
@@ -458,7 +406,7 @@ const ScriptStream = ({ code, lang: sl, animate, onDone, scrollRef }) => {
   }, [animate, code, onDone, scrollRef]);
   return <div className="bg-[#1e1e1e] text-slate-300 p-4 rounded-xl font-mono text-xs shadow-2xl border border-slate-700/80 my-3"><div className="flex gap-2 mb-3 border-b border-slate-700 pb-2.5 items-center"><Cpu className="w-3.5 h-3.5 text-indigo-400"/><span className="text-slate-400 text-[10px] font-sans font-bold uppercase tracking-widest">{sl||'Script'} Automation</span></div><div className="space-y-0.5 break-all">{vis.map((l,i)=><div key={i} className="whitespace-pre-wrap">{l}</div>)}{animate&&vis.length<lines.length&&<div className="w-2 h-3.5 bg-slate-400 animate-pulse mt-1"/>}</div></div>;
 };
- 
+
 const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete }) => {
   const [idx, setIdx] = useState(isNew ? 0 : blocks.length);
   useEffect(() => { if (!isNew) setIdx(blocks.length); }, [isNew, blocks.length]);
@@ -475,7 +423,7 @@ const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete })
     return null;
   })}</div>;
 };
- 
+
 const TokenTrendChart = ({ history, lang, currentTokens }) => {
   const [view, setView] = useState('daily');
   const t = dict[lang];
@@ -510,7 +458,7 @@ const TokenTrendChart = ({ history, lang, currentTokens }) => {
     </div>
   </div>;
 };
- 
+
 // ════════════════════════════════════════════════════════════════════════════
 // ✅ [MAIN APP]
 // ════════════════════════════════════════════════════════════════════════════
@@ -525,12 +473,12 @@ export default function App() {
   const [executionStatus, setExecutionStatus] = useState('idle');
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState('USER');
- 
+
   // ✅ LLM 프로바이더 선택
   const [llmProvider, setLlmProvider] = useState(() => {
     try { return localStorage.getItem('llm_provider') || 'gemini'; } catch { return 'gemini'; }
   });
- 
+
   // ✅ 프로바이더별 API Key (Base64 난독화 저장)
   const [apiKeys, setApiKeys] = useState(() => {
     const keys = {};
@@ -539,7 +487,7 @@ export default function App() {
     });
     return keys;
   });
- 
+
   // ✅ 프로바이더별 선택된 모델 (localStorage 영속 저장)
   const [selectedModels, setSelectedModels] = useState(() => {
     try {
@@ -547,38 +495,38 @@ export default function App() {
       return saved ? { ...DEFAULT_MODELS, ...JSON.parse(saved) } : { ...DEFAULT_MODELS };
     } catch { return { ...DEFAULT_MODELS }; }
   });
- 
+
   // ✅ API Key 입력 전용 상태 (실제 키와 분리, 저장 후 즉시 초기화)
   const [apiKeyInputVal, setApiKeyInputVal] = useState('');
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
- 
+
   const t = dict[lang];
- 
+
   useEffect(() => {
     setMatchedSolution(prev => {
       if (!prev) return null;
       return kbData[lang].find(item => item.id === prev.id) || prev;
     });
   }, [lang]);
- 
+
   useEffect(() => {
     if (theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [theme]);
- 
+
   const [messages, setMessages] = useState(() => {
     try { const s = sessionStorage.getItem('chat_history'); return s ? JSON.parse(s).map(m=>({...m,isNew:false})) : []; } catch { return []; }
   });
   useEffect(() => { if (messages.length===0) setMessages([{id:'init-1',role:'assistant',type:'INIT',isNew:false}]); }, []);
   useEffect(() => { if (messages.length>0) { try { sessionStorage.setItem('chat_history',JSON.stringify(messages.map(m=>({...m,isNew:false})))); } catch {} } }, [messages]);
- 
+
   const [tokenHistory, setTokenHistory] = useState(() => {
     try { const s=localStorage.getItem('token_history'); return s?JSON.parse(s):{}; } catch { return {}; }
   });
   const [tokens, setTokens] = useState({input:0,output:0,transKo:0,transEn:0,chat:0,agent:0,total:0,type:'NONE',count:0});
- 
+
   const markMessageAsOld = useCallback((id) => setMessages(prev=>prev.map(m=>m.id===id?{...m,isNew:false}:m)), []);
- 
+
   const updateTokenHistory = useCallback((n) => {
     if (n<=0) return;
     const today = new Date().toISOString().split('T')[0];
@@ -588,7 +536,7 @@ export default function App() {
       return updated;
     });
   }, []);
- 
+
   // ════════════════════════════════════════════════════════════════════════
   // ✅ API Key & 모델 저장/초기화
   // ════════════════════════════════════════════════════════════════════════
@@ -602,20 +550,20 @@ export default function App() {
     setApiKeyInputVal('');
     setIsApiKeyVisible(false);
   }, [apiKeyInputVal, llmProvider, t]);
- 
+
   const handleResetApiKey = useCallback(() => {
     safeStorage.remove(PROVIDER_CONFIG[llmProvider].storageKey);
     setApiKeys(prev => ({...prev,[llmProvider]:''}));
     setApiKeyInputVal('');
     setIsApiKeyVisible(false);
   }, [llmProvider]);
- 
+
   const handleModelChange = useCallback((model) => {
     const updated = {...selectedModels, [llmProvider]: model};
     setSelectedModels(updated);
     try { localStorage.setItem('selected_models_v2', JSON.stringify(updated)); } catch {}
   }, [selectedModels, llmProvider]);
- 
+
   // ════════════════════════════════════════════════════════════════════════
   // ✅ [SECTION 3] 핵심: fetchLLM - Vercel 서버리스 프록시 경유
   //
@@ -630,12 +578,12 @@ export default function App() {
   const fetchLLM = useCallback(async ({ messages: msgs, systemPrompt, isJsonMode = false }) => {
     const currentKey = apiKeys[llmProvider]?.trim();
     if (!currentKey) throw new Error(t.apiKeyMissingError);
- 
+
     const todayStr = new Date().toISOString().split('T')[0];
     if ((tokenHistory[todayStr]||0) > DAILY_TOKEN_LIMIT) {
       throw new Error(lang==='ko' ? `일일 사용량 한도(${DAILY_TOKEN_LIMIT.toLocaleString()} Token) 초과` : `Daily usage limit exceeded.`);
     }
- 
+
     for (let attempt=0; attempt<3; attempt++) {
       try {
         const response = await fetch(`/api/${llmProvider}`, {
@@ -649,7 +597,7 @@ export default function App() {
             isJsonMode,
           }),
         });
- 
+
         if (!response.ok) {
           if (response.status === 401 || response.status === 403) throw new Error(t.apiKeyAuthError);
           if ((response.status===429||response.status===503) && attempt<2) {
@@ -659,7 +607,7 @@ export default function App() {
           const errData = await response.json().catch(()=>({}));
           throw new Error(sanitizeErrorMsg(errData.error || t.apiRequestFailed));
         }
- 
+
         return await response.json(); // { text, usage: { input, output, total } }
       } catch (err) {
         if (attempt===2 || err.message===t.apiKeyAuthError || err.message===t.apiKeyMissingError) throw err;
@@ -667,7 +615,7 @@ export default function App() {
     }
     throw new Error(lang==='ko'?'API 타임아웃: 서버가 응답하지 않습니다.':'API timeout.');
   }, [llmProvider, apiKeys, selectedModels, tokenHistory, t, lang]);
- 
+
   // 음성 관련
   const [isAudioMuted, setIsAudioMuted] = useState(true);
   const [isListening, setIsListening] = useState(false);
@@ -682,7 +630,7 @@ export default function App() {
   const currentInputRef = useRef('');
   const recognitionRef = useRef(null);
   const handleSendMessageRef = useRef(null);
- 
+
   const wakeUpSpeechEngine = () => { try { if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance('');u.volume=0;window.speechSynthesis.speak(u);} }catch{} };
   const speakText = useCallback((txt) => {
     if (isAudioMuted) return;
@@ -696,7 +644,7 @@ export default function App() {
       window.speechSynthesis.speak(u);
     }catch{}
   }, [isAudioMuted, lang]);
- 
+
   const toggleListening = () => {
     try {
       wakeUpSpeechEngine();
@@ -719,10 +667,10 @@ export default function App() {
       rec.start();
     }catch{setIsListening(false);}
   };
- 
+
   const categoryCounts = kbData[lang].reduce((acc,cur)=>{const n=t.categories[cur.category]||cur.category;acc[n]=(acc[n]||0)+1;return acc;},{});
   const maxCatCount = Math.max(...Object.values(categoryCounts));
- 
+
   const translateMessage = async (text, targetLang, msgId) => {
     if (!apiKeys[llmProvider]) return;
     try {
@@ -739,7 +687,7 @@ export default function App() {
       }
     }catch{}
   };
- 
+
   const handleCategoryClick = (catName) => {
     wakeUpSpeechEngine();
     const issues = kbData[lang].filter(item=>(t.categories[item.category]||item.category)===catName);
@@ -755,7 +703,7 @@ export default function App() {
       if (!isAudioMuted) speakText(t.cachedReply.replace('{title}',item.title).replace('{rootCause}',item.rootCause).replace('{resolution}',item.resolution));
     },400);
   };
- 
+
   const handleSendMessage = async (userText) => {
     if (!userText.trim()||isLoading) return;
     wakeUpSpeechEngine();
@@ -770,32 +718,32 @@ export default function App() {
     setIsLoading(true);
     const targetLang=lang==='ko'?'en':'ko';
     await translateMessage(userText,targetLang,uid);
- 
+
     const systemPrompt=`당신은 인프라 트러블슈팅 AI 에이전트입니다.
 [지침]:
 1. 기술적으로 100% 정확한지 교차 검증하세요.
 2. 현재 언어(${lang==='ko'?'한국어':'English'})로 전문적으로 답변하세요.
- 
+
 [상황 A: KB와 일치하는 경우]
 - 답변 첫 줄에 "[MATCHED_KB_ID: 해당ID]" 출력
 - <RCA>...</RCA> 및 <RES>...</RES> 태그 사용
 - 코드 블록 출력 금지
 - 마지막에 "상세 로그는 **[${t.cliRun}]** 버튼을 클릭하세요." 안내
- 
+
 [상황 B: 새로운 장애/일반 질문]
 - MATCHED_KB_ID 태그 출력 금지
 - <RCA>, <RES> 태그로 설명
 - 스크립트는 코드 블록 사용
 - "버튼을 클릭하세요" 안내 금지
- 
+
 [Knowledge Base]:
 ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause}\nResolution: ${m.resolution}`).join('\n\n')}`;
- 
+
     const histMsgs = messages
       .filter(m=>(m.role==='user'||m.role==='assistant')&&m.type==='CUSTOM_CHAT')
       .map(m=>({role:m.role,content:m.content[lang]||m.content[m.originalLang]||''}));
     histMsgs.push({role:'user',content:`<<<START>>>\n${userText}\n<<<END>>>`});
- 
+
     try {
       const result = await fetchLLM({messages:histMsgs,systemPrompt});
       let reply = result.text||'No response generated.';
@@ -817,9 +765,9 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
       setMessages(prev=>[...prev,{id:eid,role:'assistant',type:'CUSTOM_CHAT',content:{[lang]:`⚠️ Error: ${sanitizeErrorMsg(err.message)}`},originalLang:lang,isNew:false}]);
     }finally{setIsLoading(false);}
   };
- 
+
   useEffect(()=>{handleSendMessageRef.current=handleSendMessage;},[handleSendMessage]);
- 
+
   const triggerSimulation = () => {
     if(isSimulating) return;
     setIsSimulating(true); setIsMobileMenuOpen(false);
@@ -839,10 +787,10 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
       if(!isAudioMuted) speakText(t.simRcaMsg.replace('{title}',tc.title).replace('{rootCause}',tc.rootCause));
     },5000);
   };
- 
+
   const handleCLIAction=(id)=>{setActiveCLIAction(null);const cid=Date.now()+'-cli';setMessages(prev=>[...prev,{id:cid,role:'assistant',type:'CLI_ACTION',caseId:id,isNew:true}]);setActiveIncidents([]);setIsSimulating(false);};
   const handleClearChat=()=>{setMessages([{id:Date.now()+'-init',role:'assistant',type:'INIT',isNew:false}]);setActiveCLIAction(null);setLogInput('');setMatchedSolution(null);setExecutionStatus('idle');try{window.speechSynthesis?.cancel();}catch{}};
- 
+
   const getDynamicContent=(msg,l)=>{
     if(msg.type==='CUSTOM_CHAT') return msg.content[l]||msg.content[msg.originalLang]||'';
     if(msg.type==='INIT') return dict[l].initMsg;
@@ -853,13 +801,13 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
     if(msg.type==='CLI_ACTION') return dict[l].cliContent.replace('{cliMock}',kb.cliMock).replace('{insight}',kb.insight);
     return '';
   };
- 
+
   const getLatestTokenStr=()=>{
     if(tokens.type==='CACHE') return t.cacheHit;
     if(tokens.type==='API') return t.apiHit.replace('{tokens}',tokens.count.toLocaleString());
     return `${t.lastLabel} None`;
   };
- 
+
   const handleAnalyzeLog = useCallback(async () => {
     if (!logInput?.trim()) return;
     setAnalyzing(true); setMatchedSolution(null); setExecutionStatus('idle');
@@ -873,11 +821,11 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
     else if(ll.includes('xrdp')||ll.includes('polkit')) found=kbData[lang][0];
     if(found){setTimeout(()=>{setMatchedSolution(found);setAnalyzing(false);},1000);return;}
     if(!apiKeys[llmProvider]){alert(t.unknownLogError);setAnalyzing(false);return;}
- 
+
     const systemPrompt=`당신은 클라우드/인프라 L3 장애 해결 에이전트입니다.
 아래 JSON 형식으로만 응답하세요. 다른 텍스트 금지.
 {"id":"TS-DYNAMIC-AI","title":"장애 제목","rootCause":"근본 원인","resolution":"단계별 조치","cliMock":"$ 로 시작하는 명령어 (백틱 금지)","insight":"Ansible Playbook ${TBQ}yaml...${TBQ} 형태로"}`;
- 
+
     try {
       const result=await fetchLLM({
         messages:[{role:'user',content:`언어: ${lang==='ko'?'한국어':'English'}\n\nError Log:\n${logInput}`}],
@@ -895,27 +843,27 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
     }catch(err){alert(`${t.aiAnalysisError}\n${sanitizeErrorMsg(err.message)}`);}
     finally{setAnalyzing(false);}
   },[logInput,lang,t,apiKeys,llmProvider,fetchLLM,updateTokenHistory]);
- 
+
   const downloadFile=useCallback((name,content)=>{try{const a=document.createElement('a');const blob=new Blob([content],{type:'text/plain;charset=utf-8'});const url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);}catch{}},[]);
   const handleDownloadAnsible=useCallback((sol)=>{if(!sol?.insight)return;let c='# Parsing failed.';if(sol.insight.includes(TBQ+'yaml')){const p=sol.insight.split(TBQ+'yaml');if(p.length>1)c=p[1].split(TBQ)[0].trim();}downloadFile(`fix_${sol.id}.yml`,c);},[downloadFile]);
   const handleDownloadShell=useCallback((sol)=>{if(!sol)return;let c='#!/bin/bash\n\n';if(sol.insight?.includes(TBQ+'bash')){const p=sol.insight.split(TBQ+'bash');if(p.length>1){c+=p[1].split(TBQ)[0].trim();downloadFile(`fix_${sol.id}.sh`,c);return;}}sol.cliMock?.split('\n').forEach(l=>{if(l?.trim().startsWith('$'))c+=l.replace(/^\$\s*/,'')+'\n';});downloadFile(`fix_${sol.id}.sh`,c.trim());},[downloadFile]);
- 
+
   // UI 헬퍼
   const currentCfg = PROVIDER_CONFIG[llmProvider];
   const currentKey = apiKeys[llmProvider];
   const currentModel = selectedModels[llmProvider];
   const currentModelInfo = MODEL_OPTIONS[llmProvider]?.find(m=>m.id===currentModel);
- 
+
   const providerBg = { gemini:'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-500/30', openai:'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-500/30', claude:'bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-500/30' };
   const providerText = { gemini:'text-blue-600 dark:text-blue-400', openai:'text-emerald-600 dark:text-emerald-400', claude:'text-orange-600 dark:text-orange-400' };
- 
+
   return (
     <div className="h-screen flex flex-col md:flex-row font-sans overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300">
       <div className="absolute top-4 right-4 z-50 space-y-3 pointer-events-none">
         {toasts.map(toast=><div key={toast.id} className={`flex items-center gap-3 p-4 rounded-xl border backdrop-blur-md shadow-2xl animate-in slide-in-from-right-8 ${toast.color}`}>{toast.icon}<span className="text-sm font-bold">{toast.msg}</span></div>)}
       </div>
       {isMobileMenuOpen&&<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden" onClick={()=>setIsMobileMenuOpen(false)}/>}
- 
+
       {/* ── 사이드바 ──────────────────────────────────────────────── */}
       <aside className={`fixed inset-y-0 left-0 z-50 transform ${isMobileMenuOpen?'translate-x-0':'-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0`}>
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -925,14 +873,14 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
           </div>
           <button onClick={()=>setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-6 h-6"/></button>
         </div>
- 
+
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 flex flex-col gap-2">
           <button onClick={triggerSimulation} disabled={isSimulating} className="w-full bg-red-100 hover:bg-red-200 dark:bg-red-500/10 dark:hover:bg-red-500/20 disabled:opacity-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm"><BellRing className="w-4 h-4"/>{t.urgencyBtn}</button>
           <button onClick={()=>{setActiveView('agentic');setIsMobileMenuOpen(false);}} className={`w-full py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm ${activeView==='agentic'?'bg-indigo-600 text-white border border-indigo-500':'bg-white hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}`}><Search className="w-4 h-4"/>{t.agenticBtn}</button>
         </div>
- 
+
         <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4">
- 
+
           {/* ════════════════════════════════════════════════════════
               ✅ LLM BYOK 설정 패널 (프로바이더 탭 + 모델 선택 드롭다운)
               ════════════════════════════════════════════════════════ */}
@@ -941,7 +889,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               <Key className="w-3.5 h-3.5 text-slate-500"/>
               <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">{t.apiSettingTitle}</span>
             </div>
- 
+
             {/* 프로바이더 탭 */}
             <div className="px-3 pt-3 pb-1">
               <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shadow-inner">
@@ -959,7 +907,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                 })}
               </div>
             </div>
- 
+
             {/* API Key 입력/상태 */}
             <div className="px-3 pt-2 pb-1">
               {currentKey ? (
@@ -992,7 +940,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                 </div>
               )}
             </div>
- 
+
             {/* ✅ 모델 선택 드롭다운 - FinOps 최적화 핵심 */}
             <div className="px-3 pb-3">
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5">
@@ -1018,7 +966,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               </div>
             </div>
           </div>
- 
+
           {/* 관리자 토글 */}
           {userRole==='ADMIN'&&(
             <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/20 p-3 rounded-xl">
@@ -1031,7 +979,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               </div>
             </div>
           )}
- 
+
           {/* KB 통계 */}
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner">
             <h3 className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 font-bold"><BarChart3 className="w-3.5 h-3.5"/>{t.statsTitle}</h3>
@@ -1045,18 +993,26 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               ))}
             </div>
           </div>
- 
+
           {/* FinOps */}
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner">
             <h3 className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 font-bold"><Cpu className="w-3.5 h-3.5"/>{t.finopsTitle}</h3>
             <div className="text-center mb-3 pb-3 border-b border-slate-200 dark:border-slate-800/50">
               <span className="text-[10px] text-slate-500 uppercase tracking-widest block mb-1 font-bold">{t.totalUsage}</span>
               <div className="text-3xl font-light text-slate-900 dark:text-white flex justify-center items-baseline gap-1">{tokens.total.toLocaleString()}<span className="text-[10px] text-slate-400 font-bold">/ 50K</span></div>
-              <div className="flex items-center justify-center gap-1.5 mt-1">
-                <span className={`text-[10px] font-bold ${providerText[llmProvider]}`}>{currentCfg.emoji} {currentCfg.label}</span>
-                <span className="text-slate-300 dark:text-slate-600">·</span>
-                <span className="text-[10px] text-slate-400 font-mono">{currentModel.split('-').slice(0,3).join('-')}</span>
-              </div>
+              {currentKey ? (
+                <div className="flex items-center justify-center gap-1.5 mt-1">
+                  <span className={`text-[10px] font-bold ${providerText[llmProvider]}`}>{currentCfg.emoji} {currentCfg.label}</span>
+                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                  <span className="text-[10px] text-slate-400 font-mono">{currentModel.split('-').slice(0,3).join('-')}</span>
+                  <span className="text-emerald-500 text-[8px]">●</span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-1 mt-1">
+                  <Key className="w-3 h-3 text-slate-400"/>
+                  <span className="text-[10px] text-slate-400">{lang==='ko'?'API Key 등록 후 활성화':'Register API Key to activate'}</span>
+                </div>
+              )}
             </div>
             <div className="space-y-3 mb-4 pb-3 border-b border-slate-200 dark:border-slate-800/50">
               {[{label:t.chatLabel,key:'chat',color:'bg-indigo-500',Icon:MessageSquare,tc:'text-indigo-600 dark:text-indigo-400'},{label:t.agentLabel,key:'agent',color:'bg-emerald-500',Icon:Search,tc:'text-emerald-600 dark:text-emerald-400'}].map(({label,key,color,Icon,tc})=>(
@@ -1076,7 +1032,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
             <div className="text-[10px] text-green-600 dark:text-green-400 font-bold text-center mb-2">{getLatestTokenStr()}</div>
             <TokenTrendChart history={tokenHistory} lang={lang} currentTokens={tokens.total}/>
           </div>
- 
+
           {activeCLIAction&&activeView==='chat'&&(
             <div className="mt-auto pt-2 hidden md:block">
               <h2 className="text-[10px] font-bold text-green-600 dark:text-green-500 uppercase tracking-widest mb-2 text-center">{t.actionReq}</h2>
@@ -1085,22 +1041,27 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
           )}
         </div>
       </aside>
- 
+
       {/* ── 메인 영역 ─────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col h-full relative bg-slate-50 dark:bg-[#0B1120]">
         <header className="h-14 bg-white/80 dark:bg-[#0B1120]/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-between md:justify-end items-center px-4 md:px-6 z-20 shrink-0 gap-3">
           <button onClick={()=>setIsMobileMenuOpen(true)} className="md:hidden text-slate-500 hover:text-indigo-600 dark:hover:text-white"><Menu className="w-6 h-6"/></button>
           <div className="flex items-center gap-3">
-            {/* 현재 프로바이더 + 모델 뱃지 */}
-            <div className={`hidden sm:flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border ${providerBg[llmProvider]}`}>
-              <span>{currentCfg.emoji}</span>
-              <span className={providerText[llmProvider]}>{currentCfg.label}</span>
-              {currentKey&&<>
+            {/* 현재 프로바이더 + 모델 뱃지 — API Key 등록 후에만 표시 */}
+            {currentKey ? (
+              <div className={`hidden sm:flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border ${providerBg[llmProvider]}`}>
+                <span>{currentCfg.emoji}</span>
+                <span className={providerText[llmProvider]}>{currentCfg.label}</span>
                 <span className="text-slate-300 dark:text-slate-600">·</span>
                 <span className="text-slate-500 font-mono">{currentModelInfo?.label.split(' ').slice(-2).join(' ')}</span>
                 <span className="text-emerald-500">●</span>
-              </>}
-            </div>
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700">
+                <Key className="w-3 h-3 text-slate-400"/>
+                <span className="text-slate-400">{lang==='ko'?'API Key 미설정':'API Key Required'}</span>
+              </div>
+            )}
             <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}} className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-300 dark:border-slate-700 shadow-sm">{isAudioMuted?'🔇':'🔊'}</button>
             <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors text-sm border shadow-sm ${userRole==='ADMIN'?'bg-emerald-100 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400':'bg-slate-200 border-slate-300 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}><User className="w-4 h-4"/></button>
             <button onClick={handleClearChat} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors"><Trash2 className="w-5 h-5"/></button>
@@ -1116,7 +1077,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
             </div>
           </div>
         </header>
- 
+
         {/* ── 채팅 뷰 ──────────────────────────────────────────────── */}
         {activeView==='chat'&&(
           <>
@@ -1164,7 +1125,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
             </div>
           </>
         )}
- 
+
         {/* ── 에이전트 뷰 ───────────────────────────────────────────── */}
         {activeView==='agentic'&&(
           <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar animate-in slide-in-from-right-8 duration-300">
@@ -1227,7 +1188,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
           </div>
         )}
       </main>
- 
+
       <style dangerouslySetInnerHTML={{__html:`
         .custom-scrollbar{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent;}
         .dark .custom-scrollbar{scrollbar-color:#334155 transparent;}
