@@ -845,20 +845,20 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
 
       {/* ── 사이드바 ──────────────────────────────────────────────── */}
       <aside className={`fixed inset-y-0 left-0 z-50 transform ${isMobileMenuOpen?'translate-x-0':'-translate-x-full'} md:relative md:translate-x-0 transition-transform duration-300 w-80 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0`}>
-        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0"><Terminal className="w-6 h-6 text-white"/></div>
-            <div><h1 className="font-bold text-slate-900 dark:text-white text-[17px] leading-tight">{t.title}</h1><span className="text-[11px] text-indigo-500 font-mono tracking-widest">{t.subtitle}</span></div>
+        <div className="px-3 py-2.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0"><Terminal className="w-4 h-4 text-white"/></div>
+            <div><h1 className="font-bold text-slate-900 dark:text-white text-[15px] leading-tight">{t.title}</h1><span className="text-[10px] text-indigo-500 font-mono tracking-widest">{t.subtitle}</span></div>
           </div>
-          <button onClick={()=>setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-6 h-6"/></button>
+          <button onClick={()=>setIsMobileMenuOpen(false)} className="md:hidden text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-5 h-5"/></button>
         </div>
 
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 flex flex-col gap-2">
-          <button onClick={triggerSimulation} disabled={isSimulating} className="w-full bg-red-100 hover:bg-red-200 dark:bg-red-500/10 dark:hover:bg-red-500/20 disabled:opacity-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm"><BellRing className="w-4 h-4"/>{t.urgencyBtn}</button>
-          <button onClick={()=>{setActiveView('agentic');setIsMobileMenuOpen(false);}} className={`w-full py-3 px-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm ${activeView==='agentic'?'bg-indigo-600 text-white border border-indigo-500':'bg-white hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}`}><Search className="w-4 h-4"/>{t.agenticBtn}</button>
+        <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 flex flex-col gap-1.5">
+          <button onClick={triggerSimulation} disabled={isSimulating} className="w-full bg-red-100 hover:bg-red-200 dark:bg-red-500/10 dark:hover:bg-red-500/20 disabled:opacity-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"><BellRing className="w-3.5 h-3.5"/>{t.urgencyBtn}</button>
+          <button onClick={()=>{setActiveView('agentic');setIsMobileMenuOpen(false);}} className={`w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm ${activeView==='agentic'?'bg-indigo-600 text-white border border-indigo-500':'bg-white hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}`}><Search className="w-3.5 h-3.5"/>{t.agenticBtn}</button>
         </div>
 
-        <div className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4">
+        <div className="p-3 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3">
 
           {/* ════════════════════════════════════════════════════════
               ✅ LLM BYOK 설정 패널 (프로바이더 탭 + 모델 선택 드롭다운)
