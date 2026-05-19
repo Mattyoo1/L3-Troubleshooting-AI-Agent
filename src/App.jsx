@@ -605,6 +605,7 @@ export default function App() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [activeCLIAction, setActiveCLIAction] = useState(null);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const currentInputRef = useRef('');
   const recognitionRef = useRef(null);
@@ -1026,21 +1027,117 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
         <header className="h-14 bg-white/80 dark:bg-[#0B1120]/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-between md:justify-end items-center px-4 md:px-6 z-20 shrink-0 gap-3">
           <button onClick={()=>setIsMobileMenuOpen(true)} className="md:hidden text-slate-500 hover:text-indigo-600 dark:hover:text-white"><Menu className="w-6 h-6"/></button>
           <div className="flex items-center gap-3">
-            {/* 현재 프로바이더 + 모델 뱃지 — API Key 등록 후에만 표시 */}
-            {currentKey ? (
-              <div className={`hidden sm:flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border ${providerBg[llmProvider]}`}>
-                <span>{currentCfg.emoji}</span>
-                <span className={providerText[llmProvider]}>{currentCfg.label}</span>
-                <span className="text-slate-300 dark:text-slate-600">·</span>
-                <span className="text-slate-500 font-mono">{currentModelInfo?.label.split(' ').slice(-2).join(' ')}</span>
-                <span className="text-emerald-500">●</span>
-              </div>
-            ) : (
-              <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700">
-                <Key className="w-3 h-3 text-slate-400"/>
-                <span className="text-slate-400">{lang==='ko'?'API Key 미설정':'API Key Required'}</span>
-              </div>
-            )}
+            {/* ✅ LLM 설정 드롭다운 버튼 — 클릭 시 풀 설정 패널 열림 */}
+            <div className="relative">
+              <button onClick={()=>setIsLlmSettingsOpen(v=>!v)}
+                className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border cursor-pointer transition-all hover:opacity-80 ${currentKey?providerBg[llmProvider]:'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'}`}>
+                {currentKey?(
+                  <><span>{currentCfg.emoji}</span>
+                  <span className={providerText[llmProvider]}>{currentCfg.label}</span>
+                  <span className="text-slate-300 dark:text-slate-600">·</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-mono">{currentModelInfo?.label.split(' ').slice(-2).join(' ')}</span>
+                  <span className="text-emerald-500">●</span></>
+                ):(
+                  <><Key className="w-3 h-3 text-slate-400"/>
+                  <span className="text-slate-400">{lang==='ko'?'API Key 미설정':'API Key Required'}</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400"/></>
+                )}
+              </button>
+
+              {/* LLM 설정 드롭다운 패널 */}
+              {isLlmSettingsOpen&&(
+                <>
+                  {/* 외부 클릭 시 닫기 오버레이 */}
+                  <div className="fixed inset-0 z-40" onClick={()=>setIsLlmSettingsOpen(false)}/>
+                  <div className="absolute right-0 top-full mt-2 w-72 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+                    {/* 패널 헤더 */}
+                    <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+                      <div className="flex items-center gap-2">
+                        <Key className="w-3.5 h-3.5 text-slate-500"/>
+                        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">{t.apiSettingTitle}</span>
+                      </div>
+                      <button onClick={()=>setIsLlmSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white"><X className="w-4 h-4"/></button>
+                    </div>
+
+                    {/* 프로바이더 탭 */}
+                    <div className="px-3 pt-3 pb-1">
+                      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                        {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
+                          const isActive=llmProvider===key;
+                          const hasKey=!!apiKeys[key];
+                          return(
+                            <button key={key} onClick={()=>{setLlmProvider(key);try{localStorage.setItem('llm_provider',key);}catch{}setApiKeyInputVal('');setIsApiKeyVisible(false);}}
+                              className={`flex-1 flex flex-col items-center py-1.5 rounded-md transition-all text-[9px] font-bold uppercase tracking-wide ${isActive?`bg-white dark:bg-slate-700 shadow-sm ${providerText[key]}`:'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                              <span className="text-sm mb-0.5">{cfg.emoji}</span>
+                              <span>{cfg.label}</span>
+                              {hasKey&&<span className="text-[8px] text-emerald-500 font-bold">●</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* API Key 입력/상태 */}
+                    <div className="px-3 pt-2 pb-1">
+                      {currentKey?(
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg">
+                            <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0"/>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 block">{currentCfg.label} {t.apiKeyLinked}</span>
+                              <span className="text-[10px] text-slate-400 font-mono">{maskApiKey(currentKey)}</span>
+                            </div>
+                          </div>
+                          <button onClick={handleResetApiKey} className="flex items-center justify-center gap-1.5 text-[11px] text-red-500 hover:text-red-700 font-bold py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            <Trash2 className="w-3 h-3"/>{t.resetBtn}
+                          </button>
+                        </div>
+                      ):(
+                        <div className="flex flex-col gap-2">
+                          <div className="relative">
+                            <input type={isApiKeyVisible?'text':'password'} value={apiKeyInputVal}
+                              onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
+                              placeholder={currentCfg.placeholder} maxLength={currentCfg.maxLen}
+                              className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 pr-9 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 font-mono transition-colors"
+                              autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
+                            <button type="button" onClick={()=>setIsApiKeyVisible(v=>!v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
+                              {isApiKeyVisible?<EyeOff className="w-3.5 h-3.5"/>:<Eye className="w-3.5 h-3.5"/>}
+                            </button>
+                          </div>
+                          <button onClick={()=>{handleSaveApiKey();}} disabled={!apiKeyInputVal.trim()} className="w-full text-xs font-bold py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-sm">{t.saveBtn}</button>
+                          <p className="text-[9px] text-slate-400 text-center leading-tight flex items-center justify-center gap-1"><Lock className="w-2.5 h-2.5 shrink-0"/>{t.apiKeyStorageNotice}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 모델 선택 드롭다운 */}
+                    <div className="px-3 pb-3">
+                      <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.modelLabel}</label>
+                          {currentModelInfo&&(
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                              currentModelInfo.costTier===0?'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400':
+                              currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400':
+                              'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                            }`}>{currentModelInfo.costNote}</span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <select value={currentModel} onChange={e=>handleModelChange(e.target.value)}
+                            className="w-full text-xs bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md px-2.5 py-2 pr-7 focus:outline-none focus:border-indigo-500 text-slate-800 dark:text-slate-200 appearance-none cursor-pointer font-medium">
+                            {MODEL_OPTIONS[llmProvider].map(m=>(
+                              <option key={m.id} value={m.id}>{m.badge} {m.label}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none"/>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}} className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-300 dark:border-slate-700 shadow-sm">{isAudioMuted?'🔇':'🔊'}</button>
             <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors text-sm border shadow-sm ${userRole==='ADMIN'?'bg-emerald-100 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400':'bg-slate-200 border-slate-300 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}><User className="w-4 h-4"/></button>
             <button onClick={handleClearChat} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors"><Trash2 className="w-5 h-5"/></button>
