@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B1120" />
+    <meta name="description" content="인프라 트러블슈팅 AI 에이전트 - Gemini, ChatGPT, Claude 지원" />
+ 
+    <!-- ✅ 보안 메타 태그 추가 -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+ 
+    <!-- PWA 설정 -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+ 
+    <!-- ✅ LLM API 도메인 DNS 사전 연결 (첫 요청 속도 개선) -->
+    <link rel="preconnect" href="https://generativelanguage.googleapis.com" />
+    <link rel="preconnect" href="https://api.openai.com" />
+    <link rel="preconnect" href="https://api.anthropic.com" />
+ 
+    <title>My IT Agent</title>
+    <script type="module" crossorigin src="/assets/index-C0nX4o13.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-NHbKX-nM.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // ✅ console.log 제거 (프로덕션 정보 노출 방지)
+      // ✅ 실패해도 앱 동작에 영향 없음 (PWA는 선택적 기능)
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {
+            // 무시: PWA 오프라인 기능만 비활성화됨
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
