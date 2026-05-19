@@ -21,6 +21,19 @@ export default {
   theme: {
     extend: {},
   },
+ // ✅ safelist: 동적으로 생성되는 클래스가 빌드 시 제거되지 않도록 보호
+  safelist: [
+    'dark:bg-slate-800',
+    'dark:border-blue-500',
+    'dark:border-emerald-500',
+    'dark:border-orange-500',
+    'bg-blue-50',
+    'bg-emerald-50',
+    'bg-orange-50',
+    'border-blue-200',
+    'border-emerald-200',
+    'border-orange-200',
+  ],
   plugins: [
     // ✅ animate-in, slide-in-from-*, zoom-in-*, fade-in 등 UI 애니메이션 지원
     animate
