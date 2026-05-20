@@ -195,7 +195,7 @@ const kbData = { ko: kbKo, en: kbEn };
 const dict = {
   ko: {
     title: "My IT Agent", subtitle: "Infra Troubleshooting",
-    initMsg: "안녕하세요. 인프라 트러블슈팅 AI 에이전트입니다.\n좌측 사이드바에서 LLM 프로바이더와 API Key를 등록하면 AI 분석 기능을 사용할 수 있습니다.\nKB 기반 카테고리 조회는 API Key 없이 무료로 이용 가능합니다.",
+    initMsg: "안녕하세요. 인프라 트러블슈팅 AI 에이전트입니다.\nLLM 버전 선택 후 API Key를 등록하면 AI 분석 기능을 사용할 수 있습니다.\nKB 기반 카테고리 조회는 API Key 등록이 필요 없습니다.",
     urgencyBtn: "🚨 긴급 장애 (Simulate)", agenticBtn: "🔎 장애 로그 분석 에이전트",
     agenticTitle: "긴급 로그 분석 워크플로우", statsTitle: "KB 장애 통계",
     finopsTitle: "FinOps 토큰 모니터링", totalUsage: "총 사용량",
@@ -215,12 +215,12 @@ const dict = {
     apiSettingTitle: "LLM 설정 (BYOK)",
     modelLabel: "모델 선택",
     saveBtn: "저장", apiKeyLinked: "연동 완료", resetBtn: "재설정",
-    apiKeyMissingError: "좌측 사이드바에서 API Key를 먼저 등록해주세요.",
-    apiKeyMissingAlert: "⚠️ API Key가 필요합니다. 좌측 사이드바에서 등록해주세요.",
     apiKeyInvalidFormat: "유효하지 않은 API Key 형식입니다. 프로바이더별 키 형식을 확인해주세요.",
     apiKeySaveError: "API Key 저장 중 오류가 발생했습니다.",
-    apiKeyStorageNotice: "Key는 브라우저에만 저장됩니다. Vercel 서버 로그에 기록되지 않습니다.",
+    apiKeyStorageNotice: "API Key는 내 브라우저에만 저장됩니다.",
     apiKeyAuthError: "API Key가 유효하지 않거나 권한이 없습니다. 키를 다시 확인해주세요.",
+    apiKeyMissingError: "우측 상단 버튼에서 API Key를 먼저 등록해주세요.",
+    apiKeyMissingAlert: "⚠️ API Key가 필요합니다. 우측 상단에서 등록해주세요.",
     clearChat: "대화 초기화",
     speechNotSupported: "이 브라우저는 음성 인식을 지원하지 않습니다.",
     voiceMuteToggle: "음성 출력 토글", listening: "듣고 있습니다...",
@@ -240,7 +240,7 @@ const dict = {
   },
   en: {
     title: "My IT Agent", subtitle: "Infra Troubleshooting",
-    initMsg: "Hello, I'm the Infra Troubleshooting AI Agent.\nRegister your LLM provider & API Key in the left sidebar to enable AI features.\nKB-based category lookups are always free.",
+    initMsg: "Hello, I'm the Infra Troubleshooting AI Agent.\nSelect your LLM and register an API Key to enable AI analysis.\nKB-based category lookups are always free — no API Key needed.",
     urgencyBtn: "🚨 Critical Alert (Simulate)", agenticBtn: "🔎 Log Analysis Agent",
     agenticTitle: "Agentic Auto-Remediation Workflow", statsTitle: "KB Incident Stats",
     finopsTitle: "FinOps Token Monitor", totalUsage: "Total Usage",
@@ -260,11 +260,11 @@ const dict = {
     apiSettingTitle: "LLM Settings (BYOK)",
     modelLabel: "Select Model",
     saveBtn: "Save", apiKeyLinked: "Linked", resetBtn: "Reset",
-    apiKeyMissingError: "Please register your API Key in the left sidebar first.",
-    apiKeyMissingAlert: "⚠️ API Key required. Please register in the left sidebar.",
+    apiKeyMissingError: "Please register your API Key using the button in the top-right.",
+    apiKeyMissingAlert: "⚠️ API Key required. Register via the top-right button.",
     apiKeyInvalidFormat: "Invalid API Key format. Check the format for your provider.",
     apiKeySaveError: "Error saving API Key.",
-    apiKeyStorageNotice: "Key stored locally only. Not logged by Vercel servers.",
+    apiKeyStorageNotice: "Your API Key is stored only in this browser.",
     apiKeyAuthError: "Invalid API Key or insufficient permissions. Please check your key.",
     clearChat: "Clear Chat",
     speechNotSupported: "Speech recognition not supported in this browser.",
@@ -606,6 +606,8 @@ export default function App() {
   const [activeCLIAction, setActiveCLIAction] = useState(null);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
+  // 0=프로바이더선택, 1=모델선택, 2=API키입력, 3=완료
+  const [llmStep, setLlmStep] = useState(0);
   const messagesEndRef = useRef(null);
   const currentInputRef = useRef('');
   const recognitionRef = useRef(null);
@@ -862,90 +864,17 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
         <div className="p-3 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3">
 
           {/* ════════════════════════════════════════════════════════
-              ✅ LLM BYOK 설정 패널 (프로바이더 탭 + 모델 선택 드롭다운)
+              ✅ 사이드바: LLM 연동 상태만 표시 (설정은 헤더 드롭다운에서)
               ════════════════════════════════════════════════════════ */}
-          <div className={`rounded-xl border overflow-hidden shadow-sm ${providerBg[llmProvider]}`}>
-            <div className="px-4 py-3 border-b border-slate-200/60 dark:border-slate-700/40 flex items-center gap-2">
-              <Key className="w-3.5 h-3.5 text-slate-500"/>
-              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">{t.apiSettingTitle}</span>
-            </div>
-
-            {/* 프로바이더 탭 */}
-            <div className="px-3 pt-3 pb-1">
-              <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shadow-inner">
-                {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
-                  const isActive=llmProvider===key;
-                  const hasKey=!!apiKeys[key];
-                  return (
-                    <button key={key} onClick={()=>{setLlmProvider(key);try{localStorage.setItem('llm_provider',key);}catch{}setApiKeyInputVal('');setIsApiKeyVisible(false);}}
-                      className={`flex-1 flex flex-col items-center py-1.5 rounded-md transition-all text-[9px] font-bold uppercase tracking-wide ${isActive?`bg-white dark:bg-slate-700 shadow-sm ${providerText[key]}`:'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                      <span className="text-sm mb-0.5">{cfg.emoji}</span>
-                      <span>{cfg.label}</span>
-                      {hasKey&&<span className="text-[8px] text-emerald-500 font-bold">●</span>}
-                    </button>
-                  );
-                })}
+          {currentKey && (
+            <div className={`rounded-xl border px-3 py-2.5 flex items-center gap-2.5 ${providerBg[llmProvider]}`}>
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0"/>
+              <div className="flex-1 min-w-0">
+                <span className={`text-[11px] font-bold ${providerText[llmProvider]}`}>{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</span>
+                <p className="text-[9px] text-slate-400 font-mono truncate">{maskApiKey(currentKey)}</p>
               </div>
             </div>
-
-            {/* API Key 입력/상태 */}
-            <div className="px-3 pt-2 pb-1">
-              {currentKey ? (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2.5 bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg">
-                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0"/>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 block">{currentCfg.label} {t.apiKeyLinked}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">{maskApiKey(currentKey)}</span>
-                    </div>
-                  </div>
-                  <button onClick={handleResetApiKey} className="flex items-center justify-center gap-1.5 text-[11px] text-red-500 hover:text-red-700 font-bold py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                    <Trash2 className="w-3 h-3"/>{t.resetBtn}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="relative">
-                    <input type={isApiKeyVisible?'text':'password'} value={apiKeyInputVal}
-                      onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
-                      placeholder={currentCfg.placeholder} maxLength={currentCfg.maxLen}
-                      className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 pr-9 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 font-mono transition-colors"
-                      autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
-                    <button type="button" onClick={()=>setIsApiKeyVisible(v=>!v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
-                      {isApiKeyVisible?<EyeOff className="w-3.5 h-3.5"/>:<Eye className="w-3.5 h-3.5"/>}
-                    </button>
-                  </div>
-                  <button onClick={handleSaveApiKey} disabled={!apiKeyInputVal.trim()} className="w-full text-xs font-bold py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-sm">{t.saveBtn}</button>
-                  <p className="text-[9px] text-slate-400 text-center leading-tight flex items-center justify-center gap-1"><Lock className="w-2.5 h-2.5 shrink-0"/>{t.apiKeyStorageNotice}</p>
-                </div>
-              )}
-            </div>
-
-            {/* ✅ 모델 선택 드롭다운 - FinOps 최적화 핵심 */}
-            <div className="px-3 pb-3">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.modelLabel}</label>
-                  {currentModelInfo && (
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                      currentModelInfo.costTier===0?'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400':
-                      currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400':
-                      'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-                    }`}>{currentModelInfo.costNote}</span>
-                  )}
-                </div>
-                <div className="relative">
-                  <select value={currentModel} onChange={e=>handleModelChange(e.target.value)}
-                    className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md px-2.5 py-2 pr-7 focus:outline-none focus:border-indigo-500 text-slate-800 dark:text-slate-200 appearance-none cursor-pointer font-medium">
-                    {MODEL_OPTIONS[llmProvider].map(m=>(
-                      <option key={m.id} value={m.id}>{m.badge} {m.label}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none"/>
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* 관리자 토글 */}
           {userRole==='ADMIN'&&(
@@ -1027,10 +956,10 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
         <header className="h-14 bg-white/80 dark:bg-[#0B1120]/80 backdrop-blur border-b border-slate-200 dark:border-slate-800 flex justify-between md:justify-end items-center px-4 md:px-6 z-20 shrink-0 gap-3">
           <button onClick={()=>setIsMobileMenuOpen(true)} className="md:hidden text-slate-500 hover:text-indigo-600 dark:hover:text-white"><Menu className="w-6 h-6"/></button>
           <div className="flex items-center gap-3">
-            {/* ✅ LLM 설정 드롭다운 버튼 — 클릭 시 풀 설정 패널 열림 */}
+            {/* ✅ LLM 설정 드롭다운 — 단계별 UX */}
             <div className="relative">
-              <button onClick={()=>setIsLlmSettingsOpen(v=>!v)}
-                className={`flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-full border cursor-pointer transition-all hover:opacity-80 ${currentKey?providerBg[llmProvider]:'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'}`}>
+              <button onClick={()=>{setIsLlmSettingsOpen(v=>!v);setLlmStep(currentKey?3:0);}}
+                className={`flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-full border cursor-pointer transition-all hover:opacity-80 ${currentKey?providerBg[llmProvider]:'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'}`}>
                 {currentKey?(
                   <><span>{currentCfg.emoji}</span>
                   <span className={providerText[llmProvider]}>{currentCfg.label}</span>
@@ -1039,106 +968,103 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                   <span className="text-emerald-500">●</span></>
                 ):(
                   <><Key className="w-3 h-3 text-slate-400"/>
-                  <span className="text-slate-400">{lang==='ko'?'API Key 미설정':'API Key Required'}</span>
+                  <span className="text-slate-400">{lang==='ko'?'LLM 설정':'LLM Setup'}</span>
                   <ChevronDown className="w-3 h-3 text-slate-400"/></>
                 )}
               </button>
-
-              {/* LLM 설정 드롭다운 패널 */}
               {isLlmSettingsOpen&&(
                 <>
-                  {/* 외부 클릭 시 닫기 오버레이 */}
-                  <div className="fixed inset-0 z-40" onClick={()=>setIsLlmSettingsOpen(false)}/>
-                  <div className="absolute right-0 top-full mt-2 w-72 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-                    {/* 패널 헤더 */}
-                    <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
-                      <div className="flex items-center gap-2">
-                        <Key className="w-3.5 h-3.5 text-slate-500"/>
-                        <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">{t.apiSettingTitle}</span>
-                      </div>
-                      <button onClick={()=>setIsLlmSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white"><X className="w-4 h-4"/></button>
+                  <div className="fixed inset-0 z-40" onClick={()=>{setIsLlmSettingsOpen(false);setApiKeyInputVal('');setIsApiKeyVisible(false);}}/>
+                  <div className="absolute right-0 top-full mt-2 w-80 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                      <span className="text-[12px] font-bold text-slate-700 dark:text-slate-200">{lang==='ko'?'AI 모델 설정':'AI Model Setup'}</span>
+                      <button onClick={()=>{setIsLlmSettingsOpen(false);setApiKeyInputVal('');setIsApiKeyVisible(false);}} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4"/></button>
                     </div>
-
-                    {/* 프로바이더 탭 */}
-                    <div className="px-3 pt-3 pb-1">
-                      <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                        {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
-                          const isActive=llmProvider===key;
-                          const hasKey=!!apiKeys[key];
-                          return(
-                            <button key={key} onClick={()=>{setLlmProvider(key);try{localStorage.setItem('llm_provider',key);}catch{}setApiKeyInputVal('');setIsApiKeyVisible(false);}}
-                              className={`flex-1 flex flex-col items-center py-1.5 rounded-md transition-all text-[9px] font-bold uppercase tracking-wide ${isActive?`bg-white dark:bg-slate-700 shadow-sm ${providerText[key]}`:'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                              <span className="text-sm mb-0.5">{cfg.emoji}</span>
-                              <span>{cfg.label}</span>
-                              {hasKey&&<span className="text-[8px] text-emerald-500 font-bold">●</span>}
-                            </button>
-                          );
-                        })}
+                    {currentKey&&llmStep===3?(
+                      <div className="p-4 flex flex-col gap-3">
+                        <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-500/30 px-4 py-3 rounded-xl">
+                          <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0"/>
+                          <div>
+                            <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</p>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{maskApiKey(currentKey)}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">{currentModelInfo?.badge} {currentModelInfo?.label}</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={()=>setLlmStep(0)} className="flex-1 text-xs font-bold py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors">{lang==='ko'?'변경':'Change'}</button>
+                          <button onClick={()=>{handleResetApiKey();setLlmStep(0);}} className="flex-1 text-xs font-bold py-2 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-500 rounded-lg transition-colors flex items-center justify-center gap-1"><Trash2 className="w-3 h-3"/>{t.resetBtn}</button>
+                        </div>
                       </div>
-                    </div>
-
-                    {/* API Key 입력/상태 */}
-                    <div className="px-3 pt-2 pb-1">
-                      {currentKey?(
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center gap-2.5 bg-white dark:bg-slate-800 border border-emerald-200 dark:border-emerald-500/30 px-3 py-2.5 rounded-lg">
-                            <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0"/>
-                            <div className="flex-1 min-w-0">
-                              <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 block">{currentCfg.label} {t.apiKeyLinked}</span>
-                              <span className="text-[10px] text-slate-400 font-mono">{maskApiKey(currentKey)}</span>
+                    ):(
+                      <div className="p-4 flex flex-col gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2.5">
+                            <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{lang==='ko'?'AI 모델 선택':'Select AI Model'}</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2">
+                            {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
+                              const isActive=llmProvider===key;
+                              const hasKey=!!apiKeys[key];
+                              return(
+                                <button key={key} onClick={()=>{setLlmProvider(key);try{localStorage.setItem('llm_provider',key);}catch{}setApiKeyInputVal('');setIsApiKeyVisible(false);if(llmStep===0)setLlmStep(1);}}
+                                  className={`flex flex-col items-center py-3 rounded-xl border-2 transition-all text-[10px] font-bold ${isActive?`border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 ${providerText[key]}`:'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                                  <span className="text-xl mb-1">{cfg.emoji}</span>
+                                  <span>{cfg.label}</span>
+                                  {hasKey&&<span className="text-[8px] text-emerald-500 mt-0.5">● {lang==='ko'?'연동됨':'Active'}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        {llmStep>=1&&(
+                          <div>
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{lang==='ko'?'버전 선택':'Select Version'}</span>
+                              {currentModelInfo&&<span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${currentModelInfo.costTier===0?'bg-blue-100 text-blue-600':currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600':'bg-amber-100 text-amber-600'}`}>{currentModelInfo.costNote}</span>}
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              {MODEL_OPTIONS[llmProvider].map(m=>(
+                                <button key={m.id} onClick={()=>{handleModelChange(m.id);if(llmStep===1)setLlmStep(2);}}
+                                  className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-xs font-medium ${currentModel===m.id?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300':'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-indigo-300 dark:hover:border-indigo-700'}`}>
+                                  <span>{m.badge} {m.label}</span>
+                                  {currentModel===m.id&&<CheckCircle className="w-3.5 h-3.5 text-indigo-500"/>}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                          <button onClick={handleResetApiKey} className="flex items-center justify-center gap-1.5 text-[11px] text-red-500 hover:text-red-700 font-bold py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                            <Trash2 className="w-3 h-3"/>{t.resetBtn}
-                          </button>
-                        </div>
-                      ):(
-                        <div className="flex flex-col gap-2">
-                          <div className="relative">
-                            <input type={isApiKeyVisible?'text':'password'} value={apiKeyInputVal}
-                              onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
-                              placeholder={currentCfg.placeholder} maxLength={currentCfg.maxLen}
-                              className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 pr-9 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 font-mono transition-colors"
-                              autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
-                            <button type="button" onClick={()=>setIsApiKeyVisible(v=>!v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
-                              {isApiKeyVisible?<EyeOff className="w-3.5 h-3.5"/>:<Eye className="w-3.5 h-3.5"/>}
+                        )}
+                        {llmStep>=2&&(
+                          <div>
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">API Key</span>
+                            </div>
+                            <div className="relative mb-2.5">
+                              <input type={isApiKeyVisible?'text':'password'} value={apiKeyInputVal}
+                                onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
+                                placeholder={currentCfg.placeholder} maxLength={currentCfg.maxLen}
+                                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 pr-9 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 font-mono"
+                                autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
+                              <button type="button" onClick={()=>setIsApiKeyVisible(v=>!v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                {isApiKeyVisible?<EyeOff className="w-3.5 h-3.5"/>:<Eye className="w-3.5 h-3.5"/>}
+                              </button>
+                            </div>
+                            <button onClick={()=>{handleSaveApiKey();if(validateApiKey(apiKeyInputVal.trim(),llmProvider)){setLlmStep(3);}}} disabled={!apiKeyInputVal.trim()}
+                              className="w-full text-sm font-bold py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
+                              <CheckCircle className="w-4 h-4"/>{lang==='ko'?'저장하고 시작':'Save & Start'}
                             </button>
+                            <p className="text-[9px] text-slate-400 text-center mt-2 flex items-center justify-center gap-1"><Lock className="w-2.5 h-2.5 shrink-0"/>{t.apiKeyStorageNotice}</p>
                           </div>
-                          <button onClick={()=>{handleSaveApiKey();}} disabled={!apiKeyInputVal.trim()} className="w-full text-xs font-bold py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors shadow-sm">{t.saveBtn}</button>
-                          <p className="text-[9px] text-slate-400 text-center leading-tight flex items-center justify-center gap-1"><Lock className="w-2.5 h-2.5 shrink-0"/>{t.apiKeyStorageNotice}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 모델 선택 드롭다운 */}
-                    <div className="px-3 pb-3">
-                      <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{t.modelLabel}</label>
-                          {currentModelInfo&&(
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                              currentModelInfo.costTier===0?'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400':
-                              currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400':
-                              'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-                            }`}>{currentModelInfo.costNote}</span>
-                          )}
-                        </div>
-                        <div className="relative">
-                          <select value={currentModel} onChange={e=>handleModelChange(e.target.value)}
-                            className="w-full text-xs bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md px-2.5 py-2 pr-7 focus:outline-none focus:border-indigo-500 text-slate-800 dark:text-slate-200 appearance-none cursor-pointer font-medium">
-                            {MODEL_OPTIONS[llmProvider].map(m=>(
-                              <option key={m.id} value={m.id}>{m.badge} {m.label}</option>
-                            ))}
-                          </select>
-                          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none"/>
-                        </div>
+                        )}
                       </div>
-                    </div>
+                    )}
                   </div>
                 </>
               )}
             </div>
-            <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}} className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-300 dark:border-slate-700 shadow-sm">{isAudioMuted?'🔇':'🔊'}</button>
+                        <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}} className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors text-sm border border-slate-300 dark:border-slate-700 shadow-sm">{isAudioMuted?'🔇':'🔊'}</button>
             <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors text-sm border shadow-sm ${userRole==='ADMIN'?'bg-emerald-100 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400':'bg-slate-200 border-slate-300 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}><User className="w-4 h-4"/></button>
             <button onClick={handleClearChat} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors"><Trash2 className="w-5 h-5"/></button>
             <button onClick={()=>setTheme(p=>p==='dark'?'light':'dark')} className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors">{theme==='dark'?<Sun className="w-5 h-5"/>:<Moon className="w-5 h-5"/>}</button>
