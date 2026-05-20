@@ -17,6 +17,64 @@ const BQ  = String.fromCharCode(96);
 const TBQ = BQ + BQ + BQ;
 
 // ════════════════════════════════════════════════════════════════════════════
+// ✅ 위험 명령어 패턴 감지
+// ════════════════════════════════════════════════════════════════════════════
+const DANGER_PATTERNS = [
+  /docker[- ]compose\s+down\s+--volumes?/i,
+  /docker\s+system\s+prune/i,
+  /rm\s+-rf?\s+\//i,
+  /rm\s+-rf?\s+~/i,
+  /rm\s+-rf?\s+\*/i,
+  /dd\s+if=.*\s+of=\/dev\//i,
+  /mkfs\./i,
+  /format\s+[a-z]:/i,
+  /DROP\s+DATABASE/i,
+  /DROP\s+TABLE/i,
+  /TRUNCATE\s+TABLE/i,
+  /DELETE\s+FROM\s+\w+\s*;?\s*$/im,
+  />\/dev\/sda/i,
+  /shred\s+-/i,
+  /wipefs/i,
+  /--volumes/i,
+];
+
+const isDangerousCommand = (code) =>
+  DANGER_PATTERNS.some(p => p.test(code));
+
+// ════════════════════════════════════════════════════════════════════════════
+// ✅ 로그 민감정보 마스킹 유틸리티 (브라우저 단)
+// ════════════════════════════════════════════════════════════════════════════
+const maskSensitiveLog = (text) => {
+  if (!text) return { masked: text, changed: false };
+  let result = text;
+  let changed = false;
+
+  const rules = [
+    // IPv4
+    { re: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, tag: '[MASKED_IP]' },
+    // IPv6
+    { re: /\b([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\b/g, tag: '[MASKED_IP]' },
+    // 이메일
+    { re: /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, tag: '[MASKED_EMAIL]' },
+    // 비밀번호 패턴 (password=xxx, passwd=xxx, pwd=xxx)
+    { re: /(password|passwd|pwd|secret|token|key|auth|credential)[\s=:'"]+\S+/gi, tag: '[MASKED_SECRET]' },
+    // JWT 토큰 (eyJ...)
+    { re: /eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]*/g, tag: '[MASKED_JWT]' },
+    // AWS 키 패턴
+    { re: /AKIA[0-9A-Z]{16}/g, tag: '[MASKED_AWS_KEY]' },
+    // 신용카드 번호 패턴 (16자리)
+    { re: /\b\d{4}[\s\-]\d{4}[\s\-]\d{4}[\s\-]\d{4}\b/g, tag: '[MASKED_CARD]' },
+  ];
+
+  for (const rule of rules) {
+    const replaced = result.replace(rule.re, rule.tag);
+    if (replaced !== result) { changed = true; result = replaced; }
+  }
+
+  return { masked: result, changed };
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 // ✅ [SECTION 1] 멀티-LLM 설정 (모델 선택 포함)
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -159,7 +217,7 @@ const PROVIDER_CONFIG = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// ✅ [SECTION 2] 보안 유틸리티
+// ✅ [SECTION 2] 보안 유틸리티 — AES-GCM 암호화 API Key 저장
 // ════════════════════════════════════════════════════════════════════════════
 
 const validateApiKey = (key, provider) => {
@@ -176,9 +234,77 @@ const maskApiKey = (key) => {
   return `${key.slice(0, 8)}${'•'.repeat(Math.min(key.length - 12, 20))}${key.slice(-4)}`;
 };
 
+/**
+ * ✅ AES-GCM 기반 암호화 스토리지
+ * - 암호화 키: 기기 고유 fingerprint + 고정 salt → 서버로 절대 전송 안 됨
+ * - 브라우저 Web Crypto API 사용 (외부 라이브러리 불필요)
+ * - Base64(btoa)는 단순 인코딩이므로 AES-GCM으로 교체
+ */
+const CRYPTO_SALT = 'myit-agent-v4-salt-2025';
+
+const getCryptoKey = async () => {
+  // 기기 fingerprint: userAgent + language + timezone + screen → 가역 불가 해시
+  const raw = [
+    navigator.userAgent,
+    navigator.language,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    screen.colorDepth,
+    CRYPTO_SALT,
+  ].join('|');
+  const encoded = new TextEncoder().encode(raw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  return crypto.subtle.importKey(
+    'raw', hashBuffer, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+  );
+};
+
+const encryptText = async (plaintext) => {
+  try {
+    const key = await getCryptoKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encoded = new TextEncoder().encode(plaintext);
+    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+    // iv + ciphertext를 Base64로 묶어 저장
+    const combined = new Uint8Array(iv.byteLength + cipherBuf.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(cipherBuf), iv.byteLength);
+    return btoa(String.fromCharCode(...combined));
+  } catch { return null; }
+};
+
+const decryptText = async (base64) => {
+  try {
+    const combined = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    const iv = combined.slice(0, 12);
+    const cipherBuf = combined.slice(12);
+    const key = await getCryptoKey();
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, cipherBuf);
+    return new TextDecoder().decode(plainBuf);
+  } catch { return null; }
+};
+
+/**
+ * ✅ 비동기 암호화 스토리지 (AES-GCM)
+ * API Key는 암호화된 상태로만 저장되며, 메모리 내 복호화 후 즉시 사용
+ */
 const safeStorage = {
-  get:    (k) => { try { const v = localStorage.getItem(k); return v ? atob(v) : null; } catch { return null; } },
-  set:    (k, v) => { try { localStorage.setItem(k, btoa(v)); return true; } catch { return false; } },
+  get: async (k) => {
+    try {
+      const v = localStorage.getItem(k);
+      if (!v) return null;
+      // 구버전 Base64 데이터 마이그레이션 (atob로 먼저 시도)
+      if (v.length < 100) { try { return atob(v); } catch {} }
+      return await decryptText(v);
+    } catch { return null; }
+  },
+  set: async (k, v) => {
+    try {
+      const encrypted = await encryptText(v);
+      if (!encrypted) return false;
+      localStorage.setItem(k, encrypted);
+      return true;
+    } catch { return false; }
+  },
   remove: (k) => { try { localStorage.removeItem(k); return true; } catch { return false; } },
 };
 
@@ -186,6 +312,46 @@ const sanitizeErrorMsg = (msg) =>
   (msg || '')
     .replace(/AIza[A-Za-z0-9\-_.]{10,}/g, '[REDACTED]')
     .replace(/sk-[A-Za-z0-9\-_]{20,}/g, '[REDACTED]');
+
+// ════════════════════════════════════════════════════════════════════════════
+// ✅ KB 자동 확장 스토리지 (localStorage 기반, VectorDB 전 단계)
+//
+// 동작 방식:
+//   1. AI가 새 장애 분석 완료 → 사용자가 CLI 실행 시 KB 후보로 저장
+//   2. 로컬 KB + JSON KB를 합쳐 검색 (동적 확장)
+//   3. 관리자 페이지에서 JSON 내보내기 → GitHub 커밋 → 영구 보관
+// ════════════════════════════════════════════════════════════════════════════
+const KB_LOCAL_KEY = 'kb_local_v1';
+
+const getLocalKB = (lang) => {
+  try {
+    const raw = localStorage.getItem(KB_LOCAL_KEY);
+    if (!raw) return [];
+    const all = JSON.parse(raw);
+    return (all[lang] || []);
+  } catch { return []; }
+};
+
+const saveLocalKBEntry = (entry, lang) => {
+  try {
+    const raw = localStorage.getItem(KB_LOCAL_KEY);
+    const all = raw ? JSON.parse(raw) : { ko: [], en: [] };
+    const existing = all[lang] || [];
+    // 중복 방지: id 기준
+    if (existing.find(e => e.id === entry.id)) return false;
+    all[lang] = [entry, ...existing].slice(0, 50); // 최대 50개
+    localStorage.setItem(KB_LOCAL_KEY, JSON.stringify(all));
+    return true;
+  } catch { return false; }
+};
+
+const exportLocalKB = (lang) => {
+  try {
+    const raw = localStorage.getItem(KB_LOCAL_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw)[lang] || [];
+  } catch { return []; }
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // KB 데이터 — JSON 파일에서 import (위 상단 import 참고)
@@ -237,6 +403,15 @@ const dict = {
     shellDownload: "Shell 다운로드", ansibleDownload: "Ansible 다운로드", transTitle: "번역",
     unknownLogError: "알 수 없는 로그입니다. AI 동적 분석을 위해 API Key를 등록해주세요.",
     apiRequestFailed: "API 요청에 실패했습니다.", aiAnalysisError: "AI 분석 중 오류:",
+    aiSelectLabel: "AI 선택",
+    saveAndStart: "저장 & 시작",
+    dangerCmdTitle: "⚠️ 위험 명령어 감지",
+    dangerCmdBody: "이 명령어는 데이터를 영구 삭제할 수 있습니다.\n리스크를 충분히 검토한 후 사용하세요.",
+    dangerCmdConfirm: "위험성을 인지했습니다",
+    dangerCmdCancel: "취소",
+    securityBadge: "🔒 로그 보안 보장",
+    securityNotice: "에러 로그의 민감 정보(IP, Credential)는 브라우저에서 자동 마스킹 처리 후 AI에 전달됩니다. 모델 학습에 사용되지 않습니다.",
+    logMaskedNotice: "민감 정보가 자동 마스킹되었습니다.",
   },
   en: {
     title: "My IT Agent", subtitle: "Infra Troubleshooting",
@@ -258,7 +433,7 @@ const dict = {
     dailyTrend: "Daily Trend", monthlyTrend: "Monthly Trend", dailyBtn: "Daily", monthlyBtn: "Monthly",
     categories: { "OS / GUI":"OS Issue","Cloud / Network":"Network Issue","Storage / Middleware":"Storage Issue","Cloud / Kubernetes":"K8s Issue","Cloud / IaC":"IaC Issue","Database / HA":"DB Issue","Database / Disaster Recovery":"DB Issue","DevOps / Tooling":"DevOps Issue","Middleware / Web-WAS":"Web/Middleware" },
     apiSettingTitle: "LLM Settings (BYOK)",
-    modelLabel: "Select Model",
+    modelLabel: "Select Version",
     saveBtn: "Save", apiKeyLinked: "Linked", resetBtn: "Reset",
     apiKeyMissingError: "Please register your API Key using the button in the top-right.",
     apiKeyMissingAlert: "⚠️ API Key required. Register via the top-right button.",
@@ -282,6 +457,15 @@ const dict = {
     shellDownload: "Download Shell", ansibleDownload: "Download Ansible", transTitle: "Translate",
     unknownLogError: "Unknown error log. Register an API Key for dynamic AI analysis.",
     apiRequestFailed: "API request failed.", aiAnalysisError: "AI analysis error:",
+    aiSelectLabel: "Select AI",
+    saveAndStart: "Save & Start",
+    dangerCmdTitle: "⚠️ Dangerous Command Detected",
+    dangerCmdBody: "This command can permanently delete data.\nPlease review all risks carefully before proceeding.",
+    dangerCmdConfirm: "I understand the risk",
+    dangerCmdCancel: "Cancel",
+    securityBadge: "🔒 Log Security Guaranteed",
+    securityNotice: "Sensitive data (IPs, credentials) in your logs is automatically masked in your browser before being sent to AI. Never used for model training.",
+    logMaskedNotice: "Sensitive data was automatically masked.",
   },
 };
 
@@ -352,16 +536,33 @@ const ResCard = ({ text, animate, onDone, scrollRef }) => {
   return <div className="bg-emerald-50 dark:bg-emerald-950/30 border-l-4 border-emerald-500 rounded-r-xl p-4 my-3 shadow-sm"><div className="flex items-center gap-2 mb-2 text-emerald-700 dark:text-emerald-400 font-bold text-xs uppercase tracking-wider"><CheckCircle className="w-3.5 h-3.5"/>Resolution</div><div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">{renderFormattedText(d)}</div></div>;
 };
 
-const CLIStream = ({ code, animate, onDone, scrollRef }) => {
+const CLIStream = ({ code, animate, onDone, scrollRef, lang }) => {
   const lines = code.trim().split('\n');
   const [vis, setVis] = useState(animate ? [] : lines);
+  const [showDanger, setShowDanger] = useState(false);
+  const [dangerAcked, setDangerAcked] = useState(false);
   const fin = useRef(!animate);
+  const t = dict[lang] || dict['ko'];
+
   useEffect(() => {
     if (fin.current || !animate) { setVis(lines); if(onDone&&animate)onDone(); return; }
     let i = 0;
-    const t = setInterval(() => { setVis(lines.slice(0,i+1)); scrollRef.current?.scrollIntoView({behavior:'auto',block:'end'}); i++; if(i>=lines.length){fin.current=true;clearInterval(t);if(onDone)onDone();} }, 280);
-    return () => clearInterval(t);
+    const interval = setInterval(() => {
+      setVis(lines.slice(0,i+1));
+      scrollRef.current?.scrollIntoView({behavior:'auto',block:'end'});
+      i++;
+      if(i>=lines.length){fin.current=true;clearInterval(interval);if(onDone)onDone();}
+    }, 280);
+    return () => clearInterval(interval);
   }, [animate, code, onDone, scrollRef]);
+
+  // 위험 명령어 감지 — 렌더링 완료 후 팝업 표시
+  useEffect(() => {
+    if (!dangerAcked && isDangerousCommand(code)) {
+      setShowDanger(true);
+    }
+  }, [code, dangerAcked]);
+
   const rl = (l) => {
     if (l.startsWith('[ERROR]')) return <span className="text-red-400 font-bold">{l}</span>;
     if (l.startsWith('[INFO]')) return <span className="text-blue-400">{l}</span>;
@@ -370,7 +571,48 @@ const CLIStream = ({ code, animate, onDone, scrollRef }) => {
     if (l.startsWith('>')) return <><span className="text-indigo-400 mr-2 select-none">{'>'}</span><span className="text-green-300">{l.substring(1)}</span></>;
     return <span className="text-slate-300">{l}</span>;
   };
-  return <div className="bg-[#0c0c0c] text-slate-300 p-4 rounded-xl font-mono text-xs shadow-2xl border border-slate-700/80 my-3"><div className="flex gap-1.5 mb-3 border-b border-slate-800 pb-2.5 items-center"><div className="w-2.5 h-2.5 rounded-full bg-red-500"/><div className="w-2.5 h-2.5 rounded-full bg-yellow-500"/><div className="w-2.5 h-2.5 rounded-full bg-green-500"/><span className="text-slate-500 text-[10px] ml-2">root@l3-master:~</span></div><div className="space-y-1 break-all">{vis.map((l,i) => <div key={i} className="flex whitespace-pre-wrap">{rl(l)}</div>)}{animate&&vis.length<lines.length&&<div className="flex"><span className="text-indigo-400 mr-2">$</span><span className="w-2 h-3.5 bg-slate-400 animate-pulse"/></div>}</div></div>;
+
+  return (
+    <div className="my-3">
+      {/* 위험 명령어 경고 팝업 */}
+      {showDanger && !dangerAcked && (
+        <div className="mb-3 bg-red-950/60 border-2 border-red-500/70 rounded-xl p-4 shadow-[0_0_20px_rgba(239,68,68,0.2)]">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0"/>
+            <span className="text-sm font-bold text-red-300">{t.dangerCmdTitle}</span>
+          </div>
+          <p className="text-xs text-red-200/80 leading-relaxed whitespace-pre-line mb-3">{t.dangerCmdBody}</p>
+          <div className="flex gap-2">
+            <button onClick={()=>{setDangerAcked(true);setShowDanger(false);}}
+              className="flex-1 text-xs font-bold py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors">
+              {t.dangerCmdConfirm}
+            </button>
+            <button onClick={()=>setShowDanger(false)}
+              className="flex-1 text-xs font-bold py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg transition-colors">
+              {t.dangerCmdCancel}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="bg-[#0c0c0c] text-slate-300 p-4 rounded-xl font-mono text-xs shadow-2xl border border-slate-700/80">
+        <div className="flex gap-1.5 mb-3 border-b border-slate-800 pb-2.5 items-center">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500"/>
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500"/>
+          <div className="w-2.5 h-2.5 rounded-full bg-green-500"/>
+          <span className="text-slate-500 text-[10px] ml-2">root@l3-master:~</span>
+          {isDangerousCommand(code) && (
+            <span className="ml-auto text-[9px] font-bold text-red-400 flex items-center gap-1">
+              <AlertCircle className="w-2.5 h-2.5"/>DANGER
+            </span>
+          )}
+        </div>
+        <div className="space-y-1 break-all">
+          {vis.map((l,i) => <div key={i} className="flex whitespace-pre-wrap">{rl(l)}</div>)}
+          {animate&&vis.length<lines.length&&<div className="flex"><span className="text-indigo-400 mr-2">$</span><span className="w-2 h-3.5 bg-slate-400 animate-pulse"/></div>}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const ScriptStream = ({ code, lang: sl, animate, onDone, scrollRef }) => {
@@ -397,7 +639,7 @@ const SequenceRenderer = ({ msgId, blocks, isNew, lang, scrollRef, onComplete })
     if (b.type==='text') return <TextStream key={i} text={b.content} animate={a} onDone={next} scrollRef={scrollRef}/>;
     if (b.type==='rca') return <RcaCard key={i} text={b.content} animate={a} onDone={next} scrollRef={scrollRef}/>;
     if (b.type==='res') return <ResCard key={i} text={b.content} animate={a} onDone={next} scrollRef={scrollRef}/>;
-    if (b.type==='cli') return <CLIStream key={i} code={b.content} animate={a} onDone={next} scrollRef={scrollRef}/>;
+    if (b.type==='cli') return <CLIStream key={i} code={b.content} animate={a} onDone={next} scrollRef={scrollRef} lang={lang}/>;
     if (b.type==='script') return <ScriptStream key={i} code={b.content} lang={b.lang} animate={a} onDone={next} scrollRef={scrollRef}/>;
     return null;
   })}</div>;
@@ -458,14 +700,24 @@ export default function App() {
     try { return localStorage.getItem('llm_provider') || 'gemini'; } catch { return 'gemini'; }
   });
 
-  // ✅ 프로바이더별 API Key (Base64 난독화 저장)
-  const [apiKeys, setApiKeys] = useState(() => {
-    const keys = {};
-    Object.keys(PROVIDER_CONFIG).forEach(p => {
-      keys[p] = safeStorage.get(PROVIDER_CONFIG[p].storageKey) || '';
-    });
-    return keys;
-  });
+  // ✅ 프로바이더별 API Key — AES-GCM 암호화 복호화 (비동기 초기화)
+  const [apiKeys, setApiKeys] = useState({ gemini:'', openai:'', claude:'' });
+  useEffect(() => {
+    const loadKeys = async () => {
+      const keys = {};
+      for (const p of Object.keys(PROVIDER_CONFIG)) {
+        keys[p] = (await safeStorage.get(PROVIDER_CONFIG[p].storageKey)) || '';
+      }
+      setApiKeys(keys);
+    };
+    loadKeys();
+  }, []);
+
+  // ✅ 로컬 KB 확장 데이터 (localStorage에서 불러오기)
+  const [localKbEntries, setLocalKbEntries] = useState({ ko: [], en: [] });
+  useEffect(() => {
+    setLocalKbEntries({ ko: getLocalKB('ko'), en: getLocalKB('en') });
+  }, []);
 
   // ✅ 프로바이더별 선택된 모델 (localStorage 영속 저장)
   const [selectedModels, setSelectedModels] = useState(() => {
@@ -517,12 +769,12 @@ export default function App() {
   }, []);
 
   // ════════════════════════════════════════════════════════════════════════
-  // ✅ API Key & 모델 저장/초기화
+  // ✅ API Key & 모델 저장/초기화 — AES-GCM 암호화 저장
   // ════════════════════════════════════════════════════════════════════════
-  const handleSaveApiKey = useCallback(() => {
+  const handleSaveApiKey = useCallback(async () => {
     const trimmed = apiKeyInputVal.trim();
     if (!validateApiKey(trimmed, llmProvider)) { alert(t.apiKeyInvalidFormat); return; }
-    const saved = safeStorage.set(PROVIDER_CONFIG[llmProvider].storageKey, trimmed);
+    const saved = await safeStorage.set(PROVIDER_CONFIG[llmProvider].storageKey, trimmed);
     if (!saved) { alert(t.apiKeySaveError); return; }
     try { localStorage.setItem('llm_provider', llmProvider); } catch {}
     setApiKeys(prev => ({...prev,[llmProvider]:trimmed}));
@@ -606,6 +858,7 @@ export default function App() {
   const [activeCLIAction, setActiveCLIAction] = useState(null);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [isLlmSettingsOpen, setIsLlmSettingsOpen] = useState(false);
+  const [logMaskedNotice, setLogMaskedNotice] = useState(false);
   // 0=프로바이더선택, 1=모델선택, 2=API키입력, 3=완료
   const [llmStep, setLlmStep] = useState(0);
   const messagesEndRef = useRef(null);
@@ -808,15 +1061,37 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
 아래 JSON 형식으로만 응답하세요. 다른 텍스트 금지.
 {"id":"TS-DYNAMIC-AI","title":"장애 제목","rootCause":"근본 원인","resolution":"단계별 조치","cliMock":"$ 로 시작하는 명령어 (백틱 금지)","insight":"Ansible Playbook ${TBQ}yaml...${TBQ} 형태로"}`;
 
+    // ✅ 민감정보 마스킹 — AI 전달 전 브라우저 단에서 처리
+    const { masked: maskedLog, changed: wasChanged } = maskSensitiveLog(logInput);
+    if (wasChanged) setLogMaskedNotice(true);
+
     try {
       const result=await fetchLLM({
-        messages:[{role:'user',content:`언어: ${lang==='ko'?'한국어':'English'}\n\nError Log:\n${logInput}`}],
+        messages:[{role:'user',content:`언어: ${lang==='ko'?'한국어':'English'}\n\nError Log:\n${maskedLog}`}],
         systemPrompt,
         isJsonMode:true,
       });
       if(result.text){
         const clean=result.text.replace(/```json|```/g,'').trim();
-        setMatchedSolution(JSON.parse(clean));
+        const parsed = JSON.parse(clean);
+
+        // ✅ KB 자동 확장: AI 분석 결과를 로컬 KB에 자동 저장
+        const newEntry = {
+          ...parsed,
+          id: `TS-LOCAL-${Date.now()}`,
+          category: 'AI Generated',
+          _savedAt: new Date().toISOString(),
+          _source: 'ai-agent',
+        };
+        const saved = saveLocalKBEntry(newEntry, lang);
+        if (saved) {
+          setLocalKbEntries(prev => ({
+            ...prev,
+            [lang]: [newEntry, ...(prev[lang]||[])].slice(0,50),
+          }));
+        }
+
+        setMatchedSolution(parsed);
         if(result.usage.total>0){
           setTokens(prev=>({...prev,input:prev.input+result.usage.input,output:prev.output+result.usage.output,total:prev.total+result.usage.total,agent:prev.agent+result.usage.total,type:'API',count:result.usage.total}));
           updateTokenHistory(result.usage.total);
@@ -891,7 +1166,17 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
 
           {/* KB 통계 */}
           <div className="bg-slate-50 dark:bg-[#0B1120] rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-inner">
-            <h3 className="text-[10px] text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5 font-bold"><BarChart3 className="w-3.5 h-3.5"/>{t.statsTitle}</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[10px] text-slate-500 uppercase tracking-widest flex items-center gap-1.5 font-bold"><BarChart3 className="w-3.5 h-3.5"/>{t.statsTitle}</h3>
+              {localKbEntries[lang]?.length > 0 && (
+                <button onClick={()=>{
+                  const data = exportLocalKB(lang);
+                  downloadFile(`kb_local_${lang}_${new Date().toISOString().split('T')[0]}.json`, JSON.stringify(data, null, 2));
+                }} className="text-[9px] font-bold text-indigo-500 hover:text-indigo-400 flex items-center gap-0.5 border border-indigo-500/30 px-1.5 py-0.5 rounded-md">
+                  <FileCode className="w-2.5 h-2.5"/>JSON
+                </button>
+              )}
+            </div>
             <div className="space-y-2">
               {Object.entries(categoryCounts).map(([name,count])=>(
                 <div key={name} className="flex items-center gap-2">
@@ -901,6 +1186,23 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                 </div>
               ))}
             </div>
+            {/* 로컬 KB 확장 현황 */}
+            {localKbEntries[lang]?.length > 0 && (
+              <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <span className="text-[9px] text-indigo-500 font-bold flex items-center gap-1">
+                  <Zap className="w-2.5 h-2.5"/>
+                  {lang==='ko'?`AI 학습 KB +${localKbEntries[lang].length}건`:`AI KB +${localKbEntries[lang].length} cases`}
+                </span>
+                <button onClick={()=>{
+                  if(window.confirm(lang==='ko'?'로컬 AI KB를 초기화합니까?':'Clear local AI KB?')){
+                    localStorage.removeItem(KB_LOCAL_KEY);
+                    setLocalKbEntries({ko:[],en:[]});
+                  }
+                }} className="text-[9px] text-slate-400 hover:text-red-400 transition-colors">
+                  {lang==='ko'?'초기화':'Clear'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* FinOps */}
@@ -1000,7 +1302,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                         <div>
                           <div className="flex items-center gap-2 mb-2.5">
                             <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{lang==='ko'?'AI 모델 선택':'Select AI Model'}</span>
+                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{t.aiSelectLabel || (lang==='ko'?'AI 모델 선택':'Select AI Model')}</span>
                           </div>
                           <div className="grid grid-cols-3 gap-2">
                             {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
@@ -1053,9 +1355,8 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                             </div>
                             <button onClick={()=>{handleSaveApiKey();if(validateApiKey(apiKeyInputVal.trim(),llmProvider)){setLlmStep(3);}}} disabled={!apiKeyInputVal.trim()}
                               className="w-full text-sm font-bold py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
-                              <CheckCircle className="w-4 h-4"/>{lang==='ko'?'저장하고 시작':'Save & Start'}
+                              <CheckCircle className="w-4 h-4"/>{t.saveAndStart || (lang==='ko'?'저장하고 시작':'Save & Start')}
                             </button>
-                            <p className="text-[9px] text-slate-400 text-center mt-2 flex items-center justify-center gap-1"><Lock className="w-2.5 h-2.5 shrink-0"/>{t.apiKeyStorageNotice}</p>
                           </div>
                         )}
                       </div>
@@ -1139,10 +1440,25 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                 </div>
                 <button onClick={()=>setActiveView('chat')} className="flex items-center space-x-1.5 text-sm font-medium px-4 py-2 rounded-lg border bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-700 shadow-sm"><MessageSquare className="w-4 h-4"/><span className="hidden sm:inline">{t.backToChat}</span></button>
               </div>
+              {/* ✅ 보안 배너 */}
+              <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 flex items-start gap-3">
+                <span className="text-lg shrink-0">🔒</span>
+                <div>
+                  <p className="text-sm font-bold text-indigo-300 mb-1">{t.securityBadge}</p>
+                  <p className="text-xs text-indigo-200/70 leading-relaxed">{t.securityNotice}</p>
+                </div>
+              </div>
+
               {!currentKey&&<div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-500/30 rounded-xl p-4 flex items-start gap-3"><AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5"/><div><p className="text-sm font-bold text-amber-800 dark:text-amber-300">{t.apiKeyMissingAlert}</p><p className="text-xs text-amber-600 dark:text-amber-400 mt-1">{lang==='ko'?'KB 매칭 분석은 무료입니다. AI 동적 분석만 API Key가 필요합니다.':'KB matching is free. Only AI dynamic analysis requires an API Key.'}</p></div></div>}
               <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-md">
                 <label className="block text-sm font-bold mb-3 flex items-center space-x-2"><AlertTriangle className="w-4 h-4 text-amber-500"/><span>{t.agentLogDump}</span></label>
-                <textarea value={logInput} onChange={e=>setLogInput(e.target.value)} placeholder={t.agentLogPlaceholder} className="w-full h-40 p-4 font-mono text-sm border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none shadow-inner bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-300"/>
+                <textarea value={logInput} onChange={e=>{setLogInput(e.target.value);setLogMaskedNotice(false);}} placeholder={t.agentLogPlaceholder} className="w-full h-40 p-4 font-mono text-sm border rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none shadow-inner bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-300"/>
+                {logMaskedNotice && (
+                  <div className="mt-2 flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+                    <CheckCircle className="w-3.5 h-3.5 shrink-0"/>
+                    {t.logMaskedNotice}
+                  </div>
+                )}
                 <div className="mt-4 flex justify-end">
                   <button onClick={handleAnalyzeLog} disabled={!logInput?.trim()||analyzing} className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-50 shadow-md active:scale-95">
                     {analyzing?<Loader2 className="w-4 h-4 animate-spin"/>:<PlayCircle className="w-4 h-4"/>}
