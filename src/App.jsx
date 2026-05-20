@@ -97,22 +97,22 @@ const MODEL_OPTIONS = {
     {
       id: 'gemini-2.5-flash',
       label: 'Gemini 2.5 Flash',
-      badge: '⭐ 추천',
-      costNote: '저비용 · 빠름',
+      badge: { ko: '⭐ 추천', en: '⭐ Recommended' },
+      costNote: { ko: '저비용 · 빠름', en: 'Low cost · Fast' },
       costTier: 1,
     },
     {
       id: 'gemini-2.0-flash',
       label: 'Gemini 2.0 Flash',
-      badge: '💰',
-      costNote: '저비용',
+      badge: { ko: '💰', en: '💰' },
+      costNote: { ko: '저비용', en: 'Low cost' },
       costTier: 1,
     },
     {
       id: 'gemini-2.5-pro',
       label: 'Gemini 2.5 Pro',
-      badge: '🔥',
-      costNote: '고성능 · 고비용',
+      badge: { ko: '🔥', en: '🔥' },
+      costNote: { ko: '고성능 · 고비용', en: 'High performance · High cost' },
       costTier: 3,
     },
   ],
@@ -120,29 +120,29 @@ const MODEL_OPTIONS = {
     {
       id: 'gpt-4o-mini',
       label: 'GPT-4o Mini',
-      badge: '⭐ 추천',
-      costNote: '저비용 · 안정적',
+      badge: { ko: '⭐ 추천', en: '⭐ Recommended' },
+      costNote: { ko: '저비용 · 안정적', en: 'Low cost · Reliable' },
       costTier: 1,
     },
     {
       id: 'gpt-4.1-nano',
       label: 'GPT-4.1 Nano',
-      badge: '💰 최저가',
-      costNote: '최저비용',
+      badge: { ko: '💰 최저가', en: '💰 Cheapest' },
+      costNote: { ko: '최저비용', en: 'Lowest cost' },
       costTier: 0,
     },
     {
       id: 'gpt-4.1-mini',
       label: 'GPT-4.1 Mini',
-      badge: '✦',
-      costNote: '저비용',
+      badge: { ko: '✦', en: '✦' },
+      costNote: { ko: '저비용', en: 'Low cost' },
       costTier: 1,
     },
     {
       id: 'gpt-4o',
       label: 'GPT-4o',
-      badge: '🔥',
-      costNote: '고성능 · 고비용',
+      badge: { ko: '🔥', en: '🔥' },
+      costNote: { ko: '고성능 · 고비용', en: 'High performance · High cost' },
       costTier: 3,
     },
   ],
@@ -150,22 +150,22 @@ const MODEL_OPTIONS = {
     {
       id: 'claude-haiku-4-5-20251001',
       label: 'Claude Haiku 4.5',
-      badge: '⭐ 추천',
-      costNote: '저비용 · 빠름',
+      badge: { ko: '⭐ 추천', en: '⭐ Recommended' },
+      costNote: { ko: '저비용 · 빠름', en: 'Low cost · Fast' },
       costTier: 1,
     },
     {
       id: 'claude-3-5-haiku-20241022',
       label: 'Claude 3.5 Haiku',
-      badge: '💰',
-      costNote: '저비용',
+      badge: { ko: '💰', en: '💰' },
+      costNote: { ko: '저비용', en: 'Low cost' },
       costTier: 1,
     },
     {
       id: 'claude-sonnet-4-6',
       label: 'Claude Sonnet 4.6',
-      badge: '🔥',
-      costNote: '고성능 · 고비용',
+      badge: { ko: '🔥', en: '🔥' },
+      costNote: { ko: '고성능 · 고비용', en: 'High performance · High cost' },
       costTier: 3,
     },
   ],
@@ -189,7 +189,7 @@ const PROVIDER_CONFIG = {
     colorClass: 'blue',
     storageKey: 'byok_gemini_v3',
     keyPattern: /^AIza[A-Za-z0-9\-_.]{10,55}$/,
-    placeholder: 'AIzaSy...',
+    placeholder: '••••••••••••••••••••',
     minLen: 20, maxLen: 60,
     note: null,
   },
@@ -199,7 +199,7 @@ const PROVIDER_CONFIG = {
     colorClass: 'green',
     storageKey: 'byok_openai_v3',
     keyPattern: /^sk-[A-Za-z0-9\-_]{20,200}$/,
-    placeholder: 'sk-...',
+    placeholder: '••••••••••••••••••••',
     minLen: 40, maxLen: 220,
     note: null,
   },
@@ -209,9 +209,8 @@ const PROVIDER_CONFIG = {
     colorClass: 'orange',
     storageKey: 'byok_claude_v3',
     keyPattern: /^sk-ant-[A-Za-z0-9\-_]{20,200}$/,
-    placeholder: 'sk-ant-api...',
+    placeholder: '••••••••••••••••••••',
     minLen: 50, maxLen: 220,
-    // ✅ Vercel 서버 프록시 경유이므로 CORS 문제 없음 (이전 버전의 경고 제거)
     note: null,
   },
 };
@@ -229,10 +228,7 @@ const validateApiKey = (key, provider) => {
   return cfg.keyPattern.test(t);
 };
 
-const maskApiKey = (key) => {
-  if (!key || key.length <= 12) return '••••••••••••••••••••';
-  return `${key.slice(0, 8)}${'•'.repeat(Math.min(key.length - 12, 20))}${key.slice(-4)}`;
-};
+const maskApiKey = () => '••••••••••••••••••••';
 
 /**
  * ✅ AES-GCM 기반 암호화 스토리지
@@ -1110,6 +1106,9 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
   const currentKey = apiKeys[llmProvider];
   const currentModel = selectedModels[llmProvider];
   const currentModelInfo = MODEL_OPTIONS[llmProvider]?.find(m=>m.id===currentModel);
+  // ✅ badge/costNote 언어별 추출 헬퍼
+  const modelBadge = (m) => typeof m?.badge === 'object' ? (m.badge[lang]||m.badge.ko) : (m?.badge||'');
+  const modelCostNote = (m) => typeof m?.costNote === 'object' ? (m.costNote[lang]||m.costNote.ko) : (m?.costNote||'');
 
   const providerBg = { gemini:'bg-blue-50 dark:bg-slate-800 border-blue-200 dark:border-blue-500', openai:'bg-emerald-50 dark:bg-slate-800 border-emerald-200 dark:border-emerald-500', claude:'bg-orange-50 dark:bg-slate-800 border-orange-200 dark:border-orange-500' };
   const providerText = { gemini:'text-blue-600 dark:text-blue-400', openai:'text-emerald-600 dark:text-emerald-400', claude:'text-orange-600 dark:text-orange-400' };
@@ -1146,7 +1145,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0"/>
               <div className="flex-1 min-w-0">
                 <span className={`text-[11px] font-bold ${providerText[llmProvider]}`}>{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</span>
-                <p className="text-[9px] text-slate-400 font-mono truncate">{maskApiKey(currentKey)}</p>
+                <p className="text-[9px] text-slate-400 font-mono truncate">{maskApiKey()}</p>
               </div>
             </div>
           )}
@@ -1288,8 +1287,8 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                           <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0"/>
                           <div>
                             <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</p>
-                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{maskApiKey(currentKey)}</p>
-                            <p className="text-[10px] text-slate-500 mt-0.5">{currentModelInfo?.badge} {currentModelInfo?.label}</p>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">{maskApiKey()}</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">{modelBadge(currentModelInfo)} {currentModelInfo?.label}</p>
                           </div>
                         </div>
                         <div className="flex gap-2">
@@ -1324,13 +1323,13 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                             <div className="flex items-center gap-2 mb-2.5">
                               <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
                               <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{lang==='ko'?'버전 선택':'Select Version'}</span>
-                              {currentModelInfo&&<span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${currentModelInfo.costTier===0?'bg-blue-100 text-blue-600':currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600':'bg-amber-100 text-amber-600'}`}>{currentModelInfo.costNote}</span>}
+                              {currentModelInfo&&<span className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full ${currentModelInfo.costTier===0?'bg-blue-100 text-blue-600':currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600':'bg-amber-100 text-amber-600'}`}>{currentModelInfo.costNote[lang]||currentModelInfo.costNote.ko}</span>}
                             </div>
                             <div className="flex flex-col gap-1.5">
                               {MODEL_OPTIONS[llmProvider].map(m=>(
                                 <button key={m.id} onClick={()=>{handleModelChange(m.id);if(llmStep===1)setLlmStep(2);}}
                                   className={`flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-xs font-medium ${currentModel===m.id?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300':'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-indigo-300 dark:hover:border-indigo-700'}`}>
-                                  <span>{m.badge} {m.label}</span>
+                                  <span>{m.badge[lang]||m.badge.ko} {m.label}</span>
                                   {currentModel===m.id&&<CheckCircle className="w-3.5 h-3.5 text-indigo-500"/>}
                                 </button>
                               ))}
@@ -1344,14 +1343,12 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                               <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">API Key</span>
                             </div>
                             <div className="relative mb-2.5">
-                              <input type={isApiKeyVisible?'text':'password'} value={apiKeyInputVal}
+                              {/* ✅ 항상 password 타입 — 입력 중에도 키값 노출 없음 */}
+                              <input type="password" value={apiKeyInputVal}
                                 onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
-                                placeholder={currentCfg.placeholder} maxLength={currentCfg.maxLen}
-                                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 pr-9 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 font-mono"
+                                placeholder={lang==='ko'?'API Key 입력':'Enter API Key'} maxLength={currentCfg.maxLen}
+                                className="w-full text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-200 font-mono"
                                 autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
-                              <button type="button" onClick={()=>setIsApiKeyVisible(v=>!v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                                {isApiKeyVisible?<EyeOff className="w-3.5 h-3.5"/>:<Eye className="w-3.5 h-3.5"/>}
-                              </button>
                             </div>
                             <button onClick={()=>{handleSaveApiKey();if(validateApiKey(apiKeyInputVal.trim(),llmProvider)){setLlmStep(3);}}} disabled={!apiKeyInputVal.trim()}
                               className="w-full text-sm font-bold py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center gap-2 shadow-sm">
