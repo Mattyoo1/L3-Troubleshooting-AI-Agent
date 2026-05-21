@@ -1270,7 +1270,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
             </button>
             <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex flex-col items-center gap-1 p-2 ${userRole==='ADMIN'?'text-emerald-500':'text-slate-400'}`}>
               <User className="w-5 h-5"/>
-              <span className="text-[9px] font-bold">Admin</span>
+              <span className="text-[9px] font-bold">User</span>
             </button>
           </div>
         </div>
@@ -1295,152 +1295,26 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
           </div>
 
           {/* 오른쪽: 모든 액션 버튼 — 항상 우측 정렬 */}
-          <div className="flex items-center gap-1.5 md:gap-2.5">
+          <div className="flex items-center gap-1.5 md:gap-2">
 
-            {/* ✅ LLM 설정 버튼 — z-[60] 내부에 있어 오버레이에 가려지지 않음 */}
-            <div className="relative">
-              <button onClick={()=>{setIsLlmSettingsOpen(v=>!v);setLlmStep(currentKey?3:0);}}
-                className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-full border cursor-pointer transition-all ${currentKey?providerBg[llmProvider]:'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'}`}>
-                {currentKey?(
-                  <><span>{currentCfg.emoji}</span>
-                  <span className={`hidden sm:inline ${providerText[llmProvider]}`}>{currentCfg.label}</span>
-                  <span className="hidden sm:inline text-slate-300 dark:text-slate-600 mx-0.5">·</span>
-                  <span className="hidden sm:inline text-slate-500 dark:text-slate-400 font-mono">{currentModelInfo?.label.split(' ').slice(-2).join(' ')}</span>
-                  <span className="text-emerald-500 ml-0.5">●</span></>
-                ):(
-                  <><Key className="w-3 h-3 text-slate-400"/>
-                  <span className="text-slate-400 ml-1">{lang==='ko'?'LLM 설정':'LLM Setup'}</span>
-                  <ChevronDown className="w-3 h-3 text-slate-400 ml-0.5"/></>
-                )}
-              </button>
-
-              {/* ✅ LLM 패널: 오버레이는 z-[55], 패널은 z-[65] — 헤더(z-[60]) 아래 오버레이, 패널은 위 */}
-              {isLlmSettingsOpen&&(
-                <>
-                  {/* 오버레이: 헤더 아래에만 적용, 헤더 자체는 가리지 않음 */}
-                  <div
-                    className="fixed inset-0 z-[55] bg-black/40"
-                    style={{top: '56px'}} // 헤더 높이(h-14=56px) 아래부터만 오버레이
-                    onClick={()=>{setIsLlmSettingsOpen(false);setApiKeyInputVal('');}}
-                  />
-
-                  {/* 패널: 데스크탑=드롭다운 / 모바일=하단시트 */}
-                  <div className="
-                    fixed md:absolute
-                    inset-x-0 md:inset-x-auto
-                    bottom-0 md:bottom-auto
-                    md:right-0 md:top-full md:mt-2 md:w-80
-                    z-[65]
-                    flex flex-col
-                    bg-white dark:bg-slate-900
-                    border-t md:border border-slate-200 dark:border-slate-700
-                    rounded-t-3xl md:rounded-2xl
-                    shadow-2xl
-                  " style={{maxHeight: 'calc(100vh - 56px)'}}>
-
-                    {/* 고정 헤더 */}
-                    <div className="px-4 pt-2 pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
-                      <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto md:hidden mb-2 absolute top-2.5 left-1/2 -translate-x-1/2"/>
-                      <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 mt-3 md:mt-0">{lang==='ko'?'AI 모델 설정':'AI Model Setup'}</span>
-                      <button onClick={()=>{setIsLlmSettingsOpen(false);setApiKeyInputVal('');}} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 mt-3 md:mt-0">
-                        <X className="w-5 h-5"/>
-                      </button>
-                    </div>
-
-                    {/* 스크롤 가능 내용 */}
-                    <div className="flex-1 overflow-y-auto overscroll-contain">
-                      {currentKey&&llmStep===3?(
-                        <div className="p-5 flex flex-col gap-4">
-                          <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-500/30 px-4 py-4 rounded-2xl">
-                            <CheckCircle className="w-6 h-6 text-emerald-500 shrink-0"/>
-                            <div>
-                              <p className="text-base font-bold text-emerald-700 dark:text-emerald-400">{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</p>
-                              <p className="text-[11px] text-slate-400 font-mono mt-0.5">{maskApiKey()}</p>
-                              <p className="text-[11px] text-slate-500 mt-0.5">{modelBadge(currentModelInfo)} {currentModelInfo?.label}</p>
-                            </div>
-                          </div>
-                          <div className="flex gap-3">
-                            <button onClick={()=>setLlmStep(0)} className="flex-1 text-sm font-bold py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-xl transition-colors">{lang==='ko'?'변경':'Change'}</button>
-                            <button onClick={()=>{handleResetApiKey();setLlmStep(0);}} className="flex-1 text-sm font-bold py-3 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 text-red-500 rounded-xl transition-colors flex items-center justify-center gap-1.5"><Trash2 className="w-4 h-4"/>{t.resetBtn}</button>
-                          </div>
-                          <div style={{height:'max(env(safe-area-inset-bottom, 0px), 16px)'}}/>
-                        </div>
-                      ):(
-                        <div className="p-5 flex flex-col gap-5">
-                          {/* STEP 1 */}
-                          <div>
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">1</span>
-                              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{t.aiSelectLabel||'AI 선택'}</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-3">
-                              {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
-                                const isActive=llmProvider===key;
-                                const hasKey=!!apiKeys[key];
-                                return(
-                                  <button key={key} onClick={()=>{setLlmProvider(key);try{localStorage.setItem('llm_provider',key);}catch{}setApiKeyInputVal('');if(llmStep===0)setLlmStep(1);}}
-                                    className={`flex flex-col items-center py-4 rounded-2xl border-2 transition-all font-bold ${isActive?`border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 ${providerText[key]}`:'border-slate-200 dark:border-slate-700 text-slate-400'}`}>
-                                    <span className="text-2xl mb-1.5">{cfg.emoji}</span>
-                                    <span className="text-[11px]">{cfg.label}</span>
-                                    {hasKey&&<span className="text-[9px] text-emerald-500 mt-1">● {lang==='ko'?'연동됨':'Active'}</span>}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* STEP 2 */}
-                          {llmStep>=1&&(
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">2</span>
-                                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{lang==='ko'?'버전 선택':'Select Version'}</span>
-                                {currentModelInfo&&<span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${currentModelInfo.costTier===1?'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400':'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>{modelCostNote(currentModelInfo)}</span>}
-                              </div>
-                              <div className="flex flex-col gap-2">
-                                {MODEL_OPTIONS[llmProvider].map(m=>(
-                                  <button key={m.id} onClick={()=>{handleModelChange(m.id);if(llmStep===1)setLlmStep(2);}}
-                                    className={`flex items-center justify-between px-4 py-3.5 rounded-xl border-2 transition-all ${currentModel===m.id?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300':'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'}`}>
-                                    <div>
-                                      <span className="text-sm font-bold block">{modelBadge(m)} {m.label}</span>
-                                      <span className="text-[11px] text-slate-400 mt-0.5 block">{modelCostNote(m)}</span>
-                                    </div>
-                                    {currentModel===m.id&&<CheckCircle className="w-5 h-5 text-indigo-500 shrink-0"/>}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* STEP 3 */}
-                          {llmStep>=2&&(
-                            <div>
-                              <div className="flex items-center gap-2 mb-3">
-                                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">3</span>
-                                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">API Key</span>
-                              </div>
-                              <input type="password" value={apiKeyInputVal}
-                                onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
-                                placeholder={lang==='ko'?'API Key 입력':'Enter API Key'} maxLength={currentCfg.maxLen}
-                                className="w-full text-sm bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-4 mb-3 focus:outline-none focus:border-indigo-500 text-slate-800 dark:text-slate-200 font-mono"
-                                autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
-                              <button onClick={()=>{handleSaveApiKey();if(validateApiKey(apiKeyInputVal.trim(),llmProvider))setLlmStep(3);}} disabled={!apiKeyInputVal.trim()}
-                                className="w-full text-base font-bold py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg">
-                                <CheckCircle className="w-5 h-5"/>{t.saveAndStart||(lang==='ko'?'저장하고 시작':'Save & Start')}
-                              </button>
-                            </div>
-                          )}
-                          <div style={{height:'max(env(safe-area-inset-bottom, 0px), 24px)'}}/>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
+            {/* ✅ LLM 설정 버튼만 여기에 — 패널은 헤더 밖에서 렌더링 */}
+            <button onClick={()=>{setIsLlmSettingsOpen(v=>!v);setLlmStep(currentKey?3:0);}}
+              className={`flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-full border cursor-pointer transition-all ${currentKey?providerBg[llmProvider]:'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700'}`}>
+              {currentKey?(
+                <><span>{currentCfg.emoji}</span>
+                <span className={`hidden sm:inline ${providerText[llmProvider]}`}>{currentCfg.label}</span>
+                <span className="hidden sm:inline text-slate-300 dark:text-slate-600 mx-0.5">·</span>
+                <span className="hidden sm:inline text-slate-500 dark:text-slate-400 font-mono">{currentModelInfo?.label.split(' ').slice(-2).join(' ')}</span>
+                <span className="text-emerald-500 ml-0.5">●</span></>
+              ):(
+                <><Key className="w-3 h-3 text-slate-400"/>
+                <span className="text-slate-400 ml-1">{lang==='ko'?'LLM 설정':'LLM Setup'}</span>
+                <ChevronDown className="w-3 h-3 text-slate-400 ml-0.5"/></>
               )}
-            </div>
+            </button>
 
-            {/* 구분선 — 데스크탑만 */}
-            <div className="hidden md:block w-px h-5 bg-slate-200 dark:bg-slate-700"/>
+            {/* 구분선 */}
+            <div className="hidden md:block w-px h-4 bg-slate-200 dark:bg-slate-700"/>
 
             {/* 🔇 사운드 */}
             <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}}
@@ -1448,15 +1322,16 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               {isAudioMuted?'🔇':'🔊'}
             </button>
 
-            {/* 👤 관리자 */}
+            {/* 👤 유저 */}
             <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')}
-              className={`hidden md:flex items-center justify-center w-8 h-8 rounded-full transition-colors text-sm border ${userRole==='ADMIN'?'bg-emerald-100 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400':'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}>
+              className={`hidden md:flex items-center justify-center w-8 h-8 rounded-full transition-colors text-sm border ${userRole==='ADMIN'?'bg-emerald-100 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400':'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'}`}
+              title={userRole==='ADMIN'?'Admin Mode':'User'}>
               <User className="w-4 h-4"/>
             </button>
 
             {/* 🗑 채팅 초기화 */}
             <button onClick={handleClearChat} className="hidden md:flex text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1">
-              <Trash2 className="w-4.5 h-4.5"/>
+              <Trash2 className="w-5 h-5"/>
             </button>
 
             {/* ☀️ 테마 */}
@@ -1468,7 +1343,7 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
             {/* 🌐 언어 */}
             <button onClick={()=>setLang(p=>p==='ko'?'en':'ko')}
               className="flex items-center gap-0.5 text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors p-1">
-              <Globe className="w-4.5 h-4.5"/>
+              <Globe className="w-5 h-5"/>
               <span className="text-xs font-bold uppercase">{lang}</span>
             </button>
 
@@ -1476,13 +1351,132 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
             <div className="hidden md:block relative cursor-pointer" onClick={()=>setIsNotifOpen(!isNotifOpen)}>
               <BellRing className={`w-5 h-5 ${isNotifOpen?'text-indigo-600 dark:text-white':'text-slate-400 hover:text-indigo-500 dark:hover:text-white'}`}/>
               {activeIncidents.length>0&&<span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"/><span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 border-2 border-white dark:border-slate-900"/></span>}
-              <div className={`absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-2 transition-all z-[65] ${isNotifOpen?'opacity-100 visible':'opacity-0 invisible'}`}>
+              <div className={`absolute right-0 mt-2 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-2 z-[65] ${isNotifOpen?'opacity-100 visible':'opacity-0 invisible'}`}>
                 <h3 className="text-xs font-bold text-slate-500 mb-2 px-2 pt-1 uppercase">{t.ongoingTitle}</h3>
                 {activeIncidents.length===0?<div className="p-3 text-sm text-slate-500 text-center">{t.noOngoing}</div>:activeIncidents.map(inc=><div key={inc.id} className="p-2 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg mb-1.5 last:mb-0"><p className="text-xs text-slate-700 dark:text-slate-300 flex items-center gap-2 font-bold">{inc.icon}{inc.msg}</p></div>)}
               </div>
             </div>
           </div>
         </header>
+
+        {/* ✅ LLM 설정 패널 — 헤더 밖에서 렌더링하여 z-index 충돌 완전 방지 */}
+        {isLlmSettingsOpen&&(
+          <>
+            {/* 오버레이: 클릭 시 닫기 */}
+            <div className="fixed inset-0 z-[100] bg-black/50" onClick={()=>{setIsLlmSettingsOpen(false);setApiKeyInputVal('');}}/>
+
+            {/* 패널: 모바일=하단시트 / 데스크탑=우상단 드롭다운 */}
+            <div className="
+              fixed z-[110]
+              bottom-0 left-0 right-0
+              md:bottom-auto md:left-auto
+              md:top-14 md:right-4
+              md:w-72
+              flex flex-col
+              bg-white dark:bg-slate-900
+              border-t md:border border-slate-200 dark:border-slate-700
+              rounded-t-2xl md:rounded-xl
+              shadow-2xl
+            " style={{maxHeight:'calc(100dvh - 56px)'}}>
+
+              {/* 고정 헤더 */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-10 h-1 bg-slate-300 dark:bg-slate-600 rounded-full md:hidden"/>
+                <span className="text-sm font-bold text-slate-800 dark:text-white mt-1.5 md:mt-0">{lang==='ko'?'AI 모델 설정':'AI Model Setup'}</span>
+                <button onClick={()=>{setIsLlmSettingsOpen(false);setApiKeyInputVal('');}} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 mt-1.5 md:mt-0">
+                  <X className="w-4 h-4"/>
+                </button>
+              </div>
+
+              {/* 스크롤 내용 */}
+              <div className="flex-1 overflow-y-auto overscroll-contain">
+                {currentKey&&llmStep===3?(
+                  <div className="p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-500/30 px-3 py-3 rounded-xl">
+                      <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0"/>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{maskApiKey()}</p>
+                        <p className="text-[10px] text-slate-500">{modelBadge(currentModelInfo)} {currentModelInfo?.label}</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={()=>setLlmStep(0)} className="flex-1 text-xs font-bold py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg">{lang==='ko'?'변경':'Change'}</button>
+                      <button onClick={()=>{handleResetApiKey();setLlmStep(0);}} className="flex-1 text-xs font-bold py-2.5 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-lg flex items-center justify-center gap-1"><Trash2 className="w-3 h-3"/>{t.resetBtn}</button>
+                    </div>
+                    <div style={{height:'max(env(safe-area-inset-bottom,0px),8px)'}}/>
+                  </div>
+                ):(
+                  <div className="p-4 flex flex-col gap-4">
+                    {/* STEP 1: AI 선택 */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">{t.aiSelectLabel||'AI 선택'}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {Object.entries(PROVIDER_CONFIG).map(([key,cfg])=>{
+                          const isActive=llmProvider===key;
+                          const hasKey=!!apiKeys[key];
+                          return(
+                            <button key={key} onClick={()=>{setLlmProvider(key);try{localStorage.setItem('llm_provider',key);}catch{}setApiKeyInputVal('');if(llmStep===0)setLlmStep(1);}}
+                              className={`flex flex-col items-center py-3 rounded-xl border-2 transition-all font-bold ${isActive?`border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 ${providerText[key]}`:'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'}`}>
+                              <span className="text-xl mb-1">{cfg.emoji}</span>
+                              <span className="text-[10px]">{cfg.label}</span>
+                              {hasKey&&<span className="text-[8px] text-emerald-500 mt-0.5">● {lang==='ko'?'연동됨':'Active'}</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* STEP 2: 버전 선택 */}
+                    {llmStep>=1&&(
+                      <div>
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">{lang==='ko'?'버전 선택':'Select Version'}</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {MODEL_OPTIONS[llmProvider].map(m=>(
+                            <button key={m.id} onClick={()=>{handleModelChange(m.id);if(llmStep===1)setLlmStep(2);}}
+                              className={`flex items-center px-3 py-2.5 rounded-lg border-2 transition-all text-left w-full ${currentModel===m.id?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30':'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'}`}>
+                              <div className="flex-1">
+                                <span className={`text-xs font-bold block ${currentModel===m.id?'text-indigo-700 dark:text-indigo-300':'text-slate-700 dark:text-slate-200'}`}>{modelBadge(m)} {m.label}</span>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">{modelCostNote(m)}</span>
+                              </div>
+                              {currentModel===m.id&&<CheckCircle className="w-4 h-4 text-indigo-500 shrink-0 ml-2"/>}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* STEP 3: API Key */}
+                    {llmStep>=2&&(
+                      <div>
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wide">API Key</span>
+                        </div>
+                        <input type="password" value={apiKeyInputVal}
+                          onChange={e=>setApiKeyInputVal(e.target.value.replace(/[^A-Za-z0-9\-_.]/g,''))}
+                          placeholder={lang==='ko'?'API Key 입력':'Enter API Key'} maxLength={currentCfg.maxLen}
+                          className="w-full text-xs bg-slate-50 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-3 mb-2.5 focus:outline-none focus:border-indigo-500 text-slate-800 dark:text-slate-200 font-mono"
+                          autoComplete="off" spellCheck={false} autoCorrect="off" autoCapitalize="off"/>
+                        <button onClick={()=>{handleSaveApiKey();if(validateApiKey(apiKeyInputVal.trim(),llmProvider))setLlmStep(3);}} disabled={!apiKeyInputVal.trim()}
+                          className="w-full text-sm font-bold py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg flex items-center justify-center gap-2">
+                          <CheckCircle className="w-4 h-4"/>{t.saveAndStart||(lang==='ko'?'저장 & 시작':'Save & Start')}
+                        </button>
+                      </div>
+                    )}
+                    <div style={{height:'max(env(safe-area-inset-bottom,0px),16px)'}}/>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* ── 채팅 뷰 ──────────────────────────────────────────────── */}
         {activeView==='chat'&&(
