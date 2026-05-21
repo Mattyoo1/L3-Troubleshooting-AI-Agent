@@ -944,16 +944,20 @@ export default function App() {
       return;
     }
     setInput(''); currentInputRef.current='';
+    // textarea 높이 초기화
+    const ta = document.querySelector('textarea[maxlength="2000"]');
+    if(ta){ta.style.height='auto';}
     const uid=Date.now()+'-u';
     setMessages(prev=>[...prev,{id:uid,role:'user',type:'CUSTOM_CHAT',content:{[lang]:userText},originalLang:lang,isNew:false}]);
     setIsLoading(true);
     const targetLang=lang==='ko'?'en':'ko';
     await translateMessage(userText,targetLang,uid);
 
-    const systemPrompt=`당신은 인프라 트러블슈팅 AI 에이전트입니다.
-[지침]:
-1. 기술적으로 100% 정확한지 교차 검증하세요.
-2. 현재 언어(${lang==='ko'?'한국어':'English'})로 전문적으로 답변하세요.
+    const systemPrompt = lang === 'ko'
+      ? `당신은 인프라 트러블슈팅 AI 에이전트입니다.
+[필수 지침]:
+1. 반드시 한국어로만 답변하세요. 영어 전환 불가.
+2. 기술적으로 100% 정확한지 교차 검증하세요.
 
 [상황 A: KB와 일치하는 경우]
 - 답변 첫 줄에 "[MATCHED_KB_ID: 해당ID]" 출력
@@ -966,6 +970,25 @@ export default function App() {
 - <RCA>, <RES> 태그로 설명
 - 스크립트는 코드 블록 사용
 - "버튼을 클릭하세요" 안내 금지
+
+[Knowledge Base]:
+${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause}\nResolution: ${m.resolution}`).join('\n\n')}`
+      : `You are an Infra Troubleshooting AI Agent.
+[MANDATORY RULES]:
+1. You MUST respond ONLY in English. Do NOT use Korean under any circumstances.
+2. Cross-verify technical accuracy 100%.
+
+[Case A: Matches KB]
+- Output "[MATCHED_KB_ID: ID]" on first line
+- Use <RCA>...</RCA> and <RES>...</RES> tags
+- No code blocks
+- End with "Click **[${t.cliRun}]** for detailed recovery."
+
+[Case B: New issue / general question]
+- No MATCHED_KB_ID tag
+- Use <RCA>, <RES> tags
+- Use code blocks for scripts
+- No button click guidance
 
 [Knowledge Base]:
 ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause}\nResolution: ${m.resolution}`).join('\n\n')}`;
@@ -1115,8 +1138,8 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
 
   return (
     <div className="h-screen flex flex-col md:flex-row font-sans overflow-hidden bg-slate-50 dark:bg-[#0B1120] text-slate-800 dark:text-slate-200 transition-colors duration-300">
-      <div className="absolute top-4 right-4 z-50 space-y-3 pointer-events-none">
-        {toasts.map(toast=><div key={toast.id} className={`flex items-center gap-3 p-4 rounded-xl border backdrop-blur-md shadow-2xl animate-in slide-in-from-right-8 ${toast.color}`}>{toast.icon}<span className="text-sm font-bold">{toast.msg}</span></div>)}
+      <div className="fixed top-16 right-3 z-[90] space-y-2 pointer-events-none max-w-[85vw] md:max-w-sm">
+        {toasts.map(toast=><div key={toast.id} className={`flex items-center gap-3 p-3 rounded-xl border backdrop-blur-md shadow-2xl animate-in slide-in-from-right-8 ${toast.color}`}>{toast.icon}<span className="text-sm font-bold">{toast.msg}</span></div>)}
       </div>
       {isMobileMenuOpen&&<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 md:hidden" onClick={()=>setIsMobileMenuOpen(false)}/>}
 
@@ -1135,44 +1158,32 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
           <button onClick={()=>{setActiveView('agentic');setIsMobileMenuOpen(false);}} className={`w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm ${activeView==='agentic'?'bg-indigo-600 text-white border border-indigo-500':'bg-white hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}`}><Search className="w-3.5 h-3.5"/>{t.agenticBtn}</button>
 
           {/* ✅ 모바일 유틸리티 바 — 액션 버튼 바로 아래, 스크롤 영역 위 */}
-          <div className="md:hidden flex items-center justify-around pt-1 pb-0.5 border-t border-slate-200 dark:border-slate-700/50 mt-1">
-            <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-              <span className="text-base">{isAudioMuted?'🔇':'🔊'}</span>
-              <span className="text-[9px] font-bold">{lang==='ko'?'음성':'Sound'}</span>
+          <div className="md:hidden flex items-center justify-around pt-1.5 pb-0.5 border-t border-slate-200 dark:border-slate-700/50 mt-1">
+            {[
+              {icon:isAudioMuted?'🔇':'🔊', label:lang==='ko'?'음성':'Sound', onClick:()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}},
+              {icon:theme==='dark'?'☀️':'🌙', label:lang==='ko'?'테마':'Theme', onClick:()=>setTheme(p=>p==='dark'?'light':'dark')},
+            ].map(({icon,label,onClick})=>(
+              <button key={label} onClick={onClick} className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                <span className="text-base leading-none">{icon}</span>
+                <span className="text-[9px] font-bold leading-none mt-1">{label}</span>
+              </button>
+            ))}
+            <button onClick={()=>setLang(p=>p==='ko'?'en':'ko')} className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <Globe className="w-[18px] h-[18px] leading-none"/>
+              <span className="text-[9px] font-bold leading-none mt-1 uppercase">{lang}</span>
             </button>
-            <button onClick={()=>setTheme(p=>p==='dark'?'light':'dark')} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-              <span className="text-base">{theme==='dark'?'☀️':'🌙'}</span>
-              <span className="text-[9px] font-bold">{lang==='ko'?'테마':'Theme'}</span>
+            <button onClick={()=>{handleClearChat();setIsMobileMenuOpen(false);}} className="flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <Trash2 className="w-[18px] h-[18px] leading-none"/>
+              <span className="text-[9px] font-bold leading-none mt-1">{lang==='ko'?'초기화':'Clear'}</span>
             </button>
-            <button onClick={()=>setLang(p=>p==='ko'?'en':'ko')} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-              <Globe className="w-4 h-4"/>
-              <span className="text-[9px] font-bold uppercase">{lang}</span>
-            </button>
-            <button onClick={()=>{handleClearChat();setIsMobileMenuOpen(false);}} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-              <Trash2 className="w-4 h-4"/>
-              <span className="text-[9px] font-bold">{lang==='ko'?'초기화':'Clear'}</span>
-            </button>
-            <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${userRole==='ADMIN'?'text-emerald-500':'text-slate-400'}`}>
-              <User className="w-4 h-4"/>
-              <span className="text-[9px] font-bold">User</span>
+            <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex flex-col items-center justify-center gap-0.5 w-14 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${userRole==='ADMIN'?'text-emerald-500':'text-slate-500 dark:text-slate-400'}`}>
+              <User className="w-[18px] h-[18px] leading-none"/>
+              <span className="text-[9px] font-bold leading-none mt-1">User</span>
             </button>
           </div>
         </div>
 
         <div className="p-3 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3">
-
-          {/* ════════════════════════════════════════════════════════
-              ✅ 사이드바: LLM 연동 상태만 표시 (설정은 헤더 드롭다운에서)
-              ════════════════════════════════════════════════════════ */}
-          {currentKey && (
-            <div className={`rounded-xl border px-3 py-2.5 flex items-center gap-2.5 ${providerBg[llmProvider]}`}>
-              <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0"/>
-              <div className="flex-1 min-w-0">
-                <span className={`text-[11px] font-bold ${providerText[llmProvider]}`}>{currentCfg.emoji} {currentCfg.label} {t.apiKeyLinked}</span>
-                <p className="text-[9px] text-slate-400 font-mono truncate">{maskApiKey()}</p>
-              </div>
-            </div>
-          )}
 
           {/* 관리자 토글 */}
           {userRole==='ADMIN'&&(
@@ -1519,11 +1530,45 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
                 </div>
               </div>
               <div className="max-w-4xl mx-auto w-full p-4 pt-2">
-                <form onSubmit={e=>{e.preventDefault();handleSendMessage(input);}} className="relative flex items-center">
-                  <button type="button" onClick={toggleListening} disabled={isLoading} className={`absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center transition-all text-[16px] ${isListening?'bg-red-100 dark:bg-red-500/20 animate-pulse border border-red-300':'grayscale opacity-70 hover:opacity-100 hover:grayscale-0'}`}>{isListening?'🔴':'🎤'}</button>
-                  <input type="text" value={input} onChange={e=>{setInput(e.target.value);currentInputRef.current=e.target.value;}} maxLength={500} placeholder={isListening?t.listening:t.inputPlaceholder} className={`w-full bg-slate-100 dark:bg-slate-900 border ${isListening?'border-red-400':'border-slate-300 dark:border-slate-700'} text-slate-900 dark:text-white font-medium rounded-full pl-14 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-inner`} disabled={isLoading||isListening}/>
-                  <button type="submit" disabled={!input.trim()||isLoading} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full flex items-center justify-center transition-all disabled:opacity-50"><Send className="w-4 h-4 ml-0.5"/></button>
-                </form>
+                <div className={`flex items-end gap-2 bg-slate-100 dark:bg-slate-900 border ${isListening?'border-red-400':'border-slate-300 dark:border-slate-700'} rounded-2xl px-3 py-2 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all shadow-inner`}>
+                  {/* 마이크 버튼 */}
+                  <button type="button" onClick={toggleListening} disabled={isLoading}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all text-[16px] mb-0.5 ${isListening?'bg-red-100 dark:bg-red-500/20 animate-pulse border border-red-300':'grayscale opacity-60 hover:opacity-100 hover:grayscale-0'}`}>
+                    {isListening?'🔴':'🎤'}
+                  </button>
+                  {/* 멀티라인 textarea */}
+                  <textarea
+                    value={input}
+                    onChange={e=>{
+                      setInput(e.target.value);
+                      currentInputRef.current=e.target.value;
+                      // 자동 높이 조절
+                      e.target.style.height='auto';
+                      e.target.style.height=Math.min(e.target.scrollHeight, 160)+'px';
+                    }}
+                    onKeyDown={e=>{
+                      // Enter = 전송, Shift+Enter = 줄바꿈
+                      if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){
+                        e.preventDefault();
+                        if(input.trim()&&!isLoading) handleSendMessage(input);
+                      }
+                    }}
+                    maxLength={2000}
+                    rows={1}
+                    placeholder={isListening?t.listening:t.inputPlaceholder}
+                    className="flex-1 bg-transparent text-slate-900 dark:text-white font-medium text-sm resize-none outline-none py-1.5 leading-relaxed placeholder-slate-400 dark:placeholder-slate-500"
+                    style={{minHeight:'36px',maxHeight:'160px'}}
+                    disabled={isLoading||isListening}
+                  />
+                  {/* 전송 버튼 */}
+                  <button
+                    onClick={()=>{if(input.trim()&&!isLoading) handleSendMessage(input);}}
+                    disabled={!input.trim()||isLoading}
+                    className="w-9 h-9 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center transition-all disabled:opacity-40 shrink-0 mb-0.5">
+                    <Send className="w-4 h-4"/>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 text-center mt-1">{lang==='ko'?'Enter로 전송 · Shift+Enter로 줄바꿈':'Enter to send · Shift+Enter for new line'}</p>
               </div>
             </div>
           </>
