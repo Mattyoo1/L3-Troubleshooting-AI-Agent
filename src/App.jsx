@@ -1133,6 +1133,30 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
         <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 flex flex-col gap-1.5">
           <button onClick={triggerSimulation} disabled={isSimulating} className="w-full bg-red-100 hover:bg-red-200 dark:bg-red-500/10 dark:hover:bg-red-500/20 disabled:opacity-50 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/30 py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"><BellRing className="w-3.5 h-3.5"/>{t.urgencyBtn}</button>
           <button onClick={()=>{setActiveView('agentic');setIsMobileMenuOpen(false);}} className={`w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm ${activeView==='agentic'?'bg-indigo-600 text-white border border-indigo-500':'bg-white hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}`}><Search className="w-3.5 h-3.5"/>{t.agenticBtn}</button>
+
+          {/* ✅ 모바일 유틸리티 바 — 액션 버튼 바로 아래, 스크롤 영역 위 */}
+          <div className="md:hidden flex items-center justify-around pt-1 pb-0.5 border-t border-slate-200 dark:border-slate-700/50 mt-1">
+            <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);}} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <span className="text-base">{isAudioMuted?'🔇':'🔊'}</span>
+              <span className="text-[9px] font-bold">{lang==='ko'?'음성':'Sound'}</span>
+            </button>
+            <button onClick={()=>setTheme(p=>p==='dark'?'light':'dark')} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <span className="text-base">{theme==='dark'?'☀️':'🌙'}</span>
+              <span className="text-[9px] font-bold">{lang==='ko'?'테마':'Theme'}</span>
+            </button>
+            <button onClick={()=>setLang(p=>p==='ko'?'en':'ko')} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <Globe className="w-4 h-4"/>
+              <span className="text-[9px] font-bold uppercase">{lang}</span>
+            </button>
+            <button onClick={()=>{handleClearChat();setIsMobileMenuOpen(false);}} className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <Trash2 className="w-4 h-4"/>
+              <span className="text-[9px] font-bold">{lang==='ko'?'초기화':'Clear'}</span>
+            </button>
+            <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 ${userRole==='ADMIN'?'text-emerald-500':'text-slate-400'}`}>
+              <User className="w-4 h-4"/>
+              <span className="text-[9px] font-bold">User</span>
+            </button>
+          </div>
         </div>
 
         <div className="p-3 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3">
@@ -1249,30 +1273,6 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               <button onClick={()=>handleCLIAction(activeCLIAction)} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 px-4 rounded-xl flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(34,197,94,0.3)] transition-all border border-green-400 animate-pulse"><Zap className="w-5 h-5 fill-current"/>{t.cliRun}</button>
             </div>
           )}
-
-          {/* ✅ 모바일 전용: 사이드바 하단 유틸리티 버튼 */}
-          <div className="md:hidden mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-around">
-            <button onClick={()=>{try{if(!isAudioMuted)window.speechSynthesis?.cancel();}catch{}setIsAudioMuted(!isAudioMuted);setIsMobileMenuOpen(false);}} className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-500 p-2">
-              <span className="text-lg">{isAudioMuted?'🔇':'🔊'}</span>
-              <span className="text-[9px] font-bold">{lang==='ko'?'음성':'Sound'}</span>
-            </button>
-            <button onClick={()=>{setTheme(p=>p==='dark'?'light':'dark');}} className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-500 p-2">
-              <span className="text-lg">{theme==='dark'?'☀️':'🌙'}</span>
-              <span className="text-[9px] font-bold">{lang==='ko'?'테마':'Theme'}</span>
-            </button>
-            <button onClick={()=>{setLang(p=>p==='ko'?'en':'ko');}} className="flex flex-col items-center gap-1 text-slate-400 hover:text-indigo-500 p-2">
-              <Globe className="w-5 h-5"/>
-              <span className="text-[9px] font-bold uppercase">{lang}</span>
-            </button>
-            <button onClick={()=>{handleClearChat();setIsMobileMenuOpen(false);}} className="flex flex-col items-center gap-1 text-slate-400 hover:text-red-500 p-2">
-              <Trash2 className="w-5 h-5"/>
-              <span className="text-[9px] font-bold">{lang==='ko'?'초기화':'Clear'}</span>
-            </button>
-            <button onClick={()=>setUserRole(p=>p==='ADMIN'?'USER':'ADMIN')} className={`flex flex-col items-center gap-1 p-2 ${userRole==='ADMIN'?'text-emerald-500':'text-slate-400'}`}>
-              <User className="w-5 h-5"/>
-              <span className="text-[9px] font-bold">User</span>
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -1334,15 +1334,15 @@ ${kbData[lang].map(m=>`ID: ${m.id}\nTitle: ${m.title}\nRoot Cause: ${m.rootCause
               <Trash2 className="w-5 h-5"/>
             </button>
 
-            {/* ☀️ 테마 */}
+            {/* ☀️ 테마 — 데스크탑만, 모바일은 사이드바에서 */}
             <button onClick={()=>setTheme(p=>p==='dark'?'light':'dark')}
-              className="text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors p-1">
+              className="hidden md:block text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors p-1">
               {theme==='dark'?<Sun className="w-5 h-5"/>:<Moon className="w-5 h-5"/>}
             </button>
 
-            {/* 🌐 언어 */}
+            {/* 🌐 언어 — 데스크탑만, 모바일은 사이드바에서 */}
             <button onClick={()=>setLang(p=>p==='ko'?'en':'ko')}
-              className="flex items-center gap-0.5 text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors p-1">
+              className="hidden md:flex items-center gap-0.5 text-slate-400 hover:text-indigo-500 dark:hover:text-white transition-colors p-1">
               <Globe className="w-5 h-5"/>
               <span className="text-xs font-bold uppercase">{lang}</span>
             </button>
